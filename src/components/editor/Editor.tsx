@@ -59,7 +59,7 @@ export default function Editor({ trip }: { trip: Trip }) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden">
-      <div className="relative flex-1">
+      <div className="relative h-full flex-1 min-h-0">
         <MapView
           className="absolute inset-0"
           onLoad={(map) => useTripStore.getState().setMap(map)}
