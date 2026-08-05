@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { MaplibreMap } from "@/lib/mapTypes";
+import type { AmapMap } from "@/lib/mapTypes";
 import type { Mode, Position, Trip, TripData } from "@/lib/types";
 import {
   addDay as opAddDay,
@@ -27,7 +27,7 @@ export type SegState = "pending" | "ok" | "error";
 interface TripState {
   trip: Trip | null;
   status: SaveStatus;
-  map: MaplibreMap | null;
+  map: AmapMap | null;
   tool: Tool;
   currentMode: Mode;
   selectedStopId: string | null;
@@ -37,7 +37,7 @@ interface TripState {
   canRedo: boolean;
 
   load: (trip: Trip) => void;
-  setMap: (map: MaplibreMap | null) => void;
+  setMap: (map: AmapMap | null) => void;
   setTool: (tool: Tool) => void;
   setCurrentMode: (mode: Mode) => void;
   selectStop: (id: string | null) => void;
@@ -311,7 +311,7 @@ export const useTripStore = create<TripState>((set, get) => ({
         const res = await fetch(`/api/trips/${trip.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: payload }),
+        body: JSON.stringify({ data: payload, title: trip.title ?? "" }),
         });
         if (!res.ok) throw new Error(`save failed: ${res.status}`);
         const { updatedAt } = await res.json();
@@ -324,4 +324,3 @@ export const useTripStore = create<TripState>((set, get) => ({
       }
     },
   }));
-

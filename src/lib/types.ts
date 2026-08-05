@@ -59,6 +59,8 @@ export interface Trip {
   data: TripData;
 }
 
+export type PublicTrip = Omit<Trip, "ownerId">;
+
 export interface NewTripInput {
   ownerId: string;
   shareId: string;

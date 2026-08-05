@@ -1,4 +1,4 @@
-import type { NewTripInput, Trip } from "@/lib/types";
+import type { NewTripInput, PublicTrip, Trip } from "@/lib/types";
 
 export interface TripRepo {
   create(input: NewTripInput): Promise<Trip>;
@@ -33,3 +33,15 @@ function toTrip(row: {
 }
 
 export { toTrip };
+
+export function toPublicTrip(trip: Trip): PublicTrip {
+  return {
+    id: trip.id,
+    shareId: trip.shareId,
+    nickname: trip.nickname,
+    title: trip.title,
+    createdAt: trip.createdAt,
+    updatedAt: trip.updatedAt,
+    data: trip.data,
+  };
+}

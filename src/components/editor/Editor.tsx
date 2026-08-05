@@ -245,7 +245,7 @@ function StopCard({
   const [name, setName] = useState(stop.name);
   const [note, setNote] = useState(stop.note ?? "");
   const moveToDay = useTripStore((s) => s.moveStopToDay);
-  const days = useTripStore((s) => s.trip?.data.days ?? []);
+  const days = useTripStore((s) => s.trip?.data.days) ?? [];
 
   function commit() {
     useTripStore.getState().updateStop(stop.id, { name: name.trim() || "未命名地点", note: note.trim() });

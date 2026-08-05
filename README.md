@@ -4,7 +4,7 @@
 
 ## 功能
 
-- **添加地点**：Photon 搜索（OSM 地名）或直接点击地图，自动生成两地点间的真实路线
+- **添加地点**：高德 POI 搜索或直接点击地图，自动生成两地点间的真实路线
 - **多出行方式**：驾车 / 步行 / 骑行，可逐段混搭
 - **自由绘制**：按住拖动画线，端点自动吸附到附近站点（<100m）或新建站点
 - **吸附改线**：选中线段拖拽顶点，实时吸附到最近道路
@@ -15,22 +15,20 @@
 ## 技术栈
 
 - Next.js 16 (App Router) + TypeScript + Tailwind v4
-- MapLibre GL JS + OpenFreeMap 瓦片（免费，无需 key）
-- 路线计算：**ORS API key（可选）**，未配置时自动用免费的 Valhalla demo
-- 道路吸附：ORS snap（有 key）/ OSRM nearest demo（无 key）
-- 地点搜索：Photon（免费匿名）
+- 高德地图 JS API + 高德 Web Service API
+- 路线计算与地点搜索：高德 Web Service API
 - 数据库：Neon Postgres（drizzle ORM），本地无数据库时自动降级为内存存储
 
 ## 本地开发
 
 ```bash
-cp .env.example .env.local   # 填入 DATABASE_URL（Neon 连接串）
+cp .env.example .env.local   # 填入 Neon 与高德环境变量
 npm install
-npm run db:push              # 建表（仅首次 / schema 变更后）
+npm run db:migrate           # 应用已提交的数据库 migration
 npm run dev
 ```
 
-- 可选：注册 OpenRouteService 免费账号获取 `ORS_API_KEY`，可提升配额与稳定性
+- 在高德控制台创建 Web 服务 API key，以及 Web 端（JS API）key 与安全密钥；前者仅保存为 `AMAP_WEB_SERVICE_KEY`。
 - 打开 http://localhost:3000 新建路线
 
 ## 命令
@@ -41,7 +39,8 @@ npm run build       # 构建
 npm run start       # 运行生产构建
 npm run lint        # ESLint
 npm test            # Vitest 单元测试
-npm run db:push     # 同步数据库 schema
+npm run db:push     # 仅本地原型环境：同步 schema
+npm run db:migrate  # 应用已提交的 migration（Preview / Production）
 ```
 
 ## 目录结构
@@ -52,13 +51,13 @@ src/
 │  ├─ page.tsx              首页（新建 / 最近路线）
 │  ├─ editor/[tripId]/      编辑器页面
 │  ├─ t/[shareId]/          分享页
-│  └─ api/                  后端接口（trips / route / snap / claim / recent）
+│  └─ api/                  后端接口（trips / route / search / claim / recent）
 ├─ components/
 │  ├─ editor/               编辑器（MapLayers 渲染、自由绘制、顶点吸附 hooks）
 │  └─ share/                分享页（地图 + 卡片流 + 动画）
 └─ lib/
    ├─ db/                   数据仓库（Neon / 内存降级）
-   ├─ routing/              路线服务 adapter（ORS / Valhalla / OSRM + 缓存）
+├─ routing/              高德路线服务 adapter 与缓存
    └─ trip/                 纯函数核心（站点增删、重排、绘制、几何）
 
 设计文档：docs/superpowers/specs/2026-08-03-route-planner-design.md

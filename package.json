@@ -9,14 +9,14 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
     "drizzle-orm": "^0.45.2",
-    "maplibre-gl": "^6.1.0",
     "nanoid": "^6.0.1",
-    "next": "16.2.12",
+    "next": "^16.3.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "server-only": "^0.0.1",

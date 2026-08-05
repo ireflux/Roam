@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import * as schema from "@/lib/db/schema";
@@ -76,12 +76,12 @@ export class NeonTripRepo implements TripRepo {
         .update(schema.trips)
         .set({
           updatedAt: new Date(),
-          data: patch.data,
-          title: patch.title,
+          ...(patch.data !== undefined ? { data: patch.data } : {}),
+          ...(patch.title !== undefined ? { title: patch.title } : {}),
         })
-        .where(eq(schema.trips.id, id))
+        .where(and(eq(schema.trips.id, id), eq(schema.trips.ownerId, ownerId)))
         .returning();
-      if (!row || row.ownerId !== ownerId) return null;
+      if (!row) return null;
       return toTrip(row);
     });
   }
@@ -92,7 +92,7 @@ export class NeonTripRepo implements TripRepo {
         .select()
         .from(schema.trips)
         .where(eq(schema.trips.ownerId, ownerId))
-        .orderBy(schema.trips.updatedAt)
+        .orderBy(desc(schema.trips.updatedAt))
         .limit(limit);
       return rows.map(toTrip);
     });

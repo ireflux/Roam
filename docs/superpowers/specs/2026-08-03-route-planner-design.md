@@ -1,5 +1,7 @@
 # Roam 路线图 — 旅行路线规划产品设计
 
+> 历史设计（已于 2026-08-04 废弃）：地图、搜索和路线能力已迁移至高德；当前部署配置以 README 为准。
+
 - 日期：2026-08-03
 - 状态：已确认，待实施
 - 技术栈：Next.js 全栈 + MapLibre GL JS + OpenFreeMap + Neon Postgres

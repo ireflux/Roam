@@ -8,11 +8,14 @@ let repo: TripRepo | null = null;
 export function getRepo(): TripRepo {
   if (!repo) {
     const url = process.env.DATABASE_URL;
+    if (!url && process.env.NODE_ENV === "production") {
+      throw new Error("DATABASE_URL must be configured in production");
+    }
     repo = url ? new NeonTripRepo(url) : new MemoryTripRepo();
   }
   return repo;
 }
 
 export function isMemoryRepo(): boolean {
-  return !process.env.DATABASE_URL;
+  return process.env.NODE_ENV !== "production" && !process.env.DATABASE_URL;
 }

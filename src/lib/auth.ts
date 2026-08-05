@@ -13,6 +13,7 @@ export async function getOrCreateOwnerId(): Promise<string> {
   store.set(OWNER_COOKIE, id, {
     httpOnly: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     maxAge: MAX_AGE,
     path: "/",
   });
@@ -30,6 +31,7 @@ export async function setNicknameCookie(nickname: string): Promise<void> {
   store.set(NICK_COOKIE, nickname, {
     httpOnly: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     maxAge: MAX_AGE,
     path: "/",
   });
