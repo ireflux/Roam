@@ -15,7 +15,3 @@ export function getRepo(): TripRepo {
   }
   return repo;
 }
-
-export function isMemoryRepo(): boolean {
-  return process.env.NODE_ENV !== "production" && !process.env.DATABASE_URL;
-}

@@ -43,7 +43,6 @@ interface TripState {
   selectStop: (id: string | null) => void;
   selectSeg: (id: string | null) => void;
 
-  patchData: (data: TripData) => void;
   setTitle: (title: string) => void;
   addStopAt: (input: { dayId?: string; name: string; lat: number; lng: number; mode: Mode }) => void;
   removeStop: (stopId: string) => void;
@@ -59,13 +58,26 @@ interface TripState {
   undo: () => void;
   redo: () => void;
 
-  save: (data?: TripData) => Promise<void>;
+  save: () => Promise<void>;
 }
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
 const UNDO_LIMIT = 50;
+const SAVE_DEBOUNCE_MS = 1500;
+const ROUTE_CONCURRENCY = 3;
+
 const undoStack: TripData[] = [];
 const redoStack: TripData[] = [];
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let saveInFlight = false;
+let saveTriggeredDuringSave = false;
+
+function clearSaveTimer() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+}
 
 function pushHistory(data: TripData) {
   undoStack.push(JSON.parse(JSON.stringify(data)) as TripData);
@@ -78,10 +90,66 @@ function syncHistoryFlags() {
   useTripStore.setState({ canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 });
 }
 
-function scheduleSave(get: () => TripState) {
+/** 标记脏状态并防抖调度保存；若正在保存则置位 saveTriggeredDuringSave，由保存循环兜底补存，绝不丢变更。 */
+function scheduleSave(get: () => TripState, delay = SAVE_DEBOUNCE_MS) {
   if (saveTimer) clearTimeout(saveTimer);
   useTripStore.setState({ status: "dirty" });
-  saveTimer = setTimeout(() => void get().save(), 1500);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void flushSave(get);
+  }, delay);
+}
+
+/** 保存循环：并发触发只排队一次；完成后若期间有新变更（dirty 或排队标志）则立即补存。 */
+async function flushSave(get: () => TripState): Promise<void> {
+  if (saveInFlight) {
+    saveTriggeredDuringSave = true;
+    return;
+  }
+  saveInFlight = true;
+  saveTriggeredDuringSave = false;
+  try {
+    const { trip } = get();
+    if (!trip) return;
+    const payload = trip.data;
+    const title = trip.title ?? "";
+    useTripStore.setState({ status: "saving" });
+    const res = await fetch(`/api/trips/${trip.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: payload, title }),
+    });
+    if (!res.ok) throw new Error(`save failed: ${res.status}`);
+    const { updatedAt } = await res.json();
+    useTripStore.setState((s) => {
+      if (!s.trip) return { status: "saved" };
+      const changedDuringSave = s.trip.data !== payload;
+      return {
+        status: changedDuringSave ? "dirty" : "saved",
+        trip: { ...s.trip, updatedAt },
+      };
+    });
+  } catch {
+    useTripStore.setState({ status: "error" });
+  } finally {
+    saveInFlight = false;
+    if (saveTriggeredDuringSave) {
+      saveTriggeredDuringSave = false;
+      void flushSave(get);
+    }
+  }
+}
+
+/** 路由请求响应守卫：仅当该段仍存在、模式与端点未变时才应用结果，防止过期响应覆盖新数据。 */
+function isRequestCurrent(get: () => TripState, req: SegmentRequest): boolean {
+  const { trip } = get();
+  if (!trip) return false;
+  const seg = trip.data.segments.find((s) => s.id === req.segId);
+  if (!seg || seg.mode !== req.mode) return false;
+  const coords = seg.geometry.coordinates;
+  const same = (a: Position, b: Position) => a[0] === b[0] && a[1] === b[1];
+  if (coords.length < 2 || !same(coords[0], req.from) || !same(coords[coords.length - 1], req.to)) return false;
+  return true;
 }
 
 export const useTripStore = create<TripState>((set, get) => ({
@@ -96,7 +164,20 @@ export const useTripStore = create<TripState>((set, get) => ({
     canUndo: false,
     canRedo: false,
 
-    load: (trip) => set({ trip, status: "idle" }),
+    load: (trip) => {
+      clearSaveTimer();
+      undoStack.length = 0;
+      redoStack.length = 0;
+      set({
+        trip,
+        status: "idle",
+        segState: {},
+        selectedStopId: null,
+        selectedSegId: null,
+        canUndo: false,
+        canRedo: false,
+      });
+    },
 
     setMap: (map) => set({ map }),
 
@@ -106,14 +187,6 @@ export const useTripStore = create<TripState>((set, get) => ({
 
     selectStop: (id) => set({ selectedStopId: id, selectedSegId: null }),
     selectSeg: (id) => set({ selectedSegId: id, selectedStopId: null }),
-
-    patchData: (data) => {
-      const { trip } = get();
-      if (!trip) return;
-      pushHistory(trip.data);
-      set({ trip: { ...trip, data } });
-      scheduleSave(get);
-    },
 
     setTitle: (title) => {
       const { trip } = get();
@@ -167,59 +240,73 @@ export const useTripStore = create<TripState>((set, get) => ({
 
     runNeeded: (needed) => {
       const queue = [...needed];
-      void (async () => {
-        while (queue.length > 0) {
-          const req = queue.shift()!;
-          const { trip } = get();
-          if (!trip) return;
-          set((s) => ({ segState: { ...s.segState, [req.segId]: "pending" } }));
-          try {
-            const res = await fetch("/api/route", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ mode: req.mode, from: req.from, to: req.to }),
-            });
-            const json = (await res.json()) as
-              | { geometry: [number, number][]; distanceM: number; durationMin: number; fallback?: boolean }
-              | { error: string; fallback?: { geometry: [number, number][]; distanceM: number; durationMin: number } };
-            const current = get().trip;
-            if (!current) return;
-            if ("error" in json && json.error) {
-              const fb = "fallback" in json ? json.fallback : undefined;
-              const fallbackData = fb
-                ? applyFallbackLine(current.data, req.segId, fb)
-                : current.data;
-              set((s) => ({
-                trip: { ...current, data: fallbackData },
-                segState: { ...s.segState, [req.segId]: "error" },
-              }));
-              scheduleSave(get);
-            } else {
-              const r = json as { geometry: [number, number][]; distanceM: number; durationMin: number };
-              const data = applyRoute(current.data, req.segId, r);
-              set((s) => ({
-                trip: { ...current, data },
-                segState: { ...s.segState, [req.segId]: "ok" },
-              }));
-              scheduleSave(get);
-            }
-          } catch {
-            const current = get().trip;
-            if (!current) return;
-            const fb = {
-              geometry: [req.from, req.to],
-              distanceM: 0,
-              durationMin: 0,
-            };
-            const data = applyFallbackLine(current.data, req.segId, fb);
+      let active = 0;
+
+      const handle = async (req: SegmentRequest) => {
+        const { trip } = get();
+        if (!trip) return;
+        set((s) => ({ segState: { ...s.segState, [req.segId]: "pending" } }));
+        try {
+          const res = await fetch("/api/route", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: req.mode, from: req.from, to: req.to }),
+          });
+          const json = (await res.json()) as
+            | { geometry: Position[]; distanceM: number; durationMin: number; fallback?: boolean }
+            | { error: string; fallback?: { geometry: Position[]; distanceM: number; durationMin: number } };
+          if (!isRequestCurrent(get, req)) return;
+          const current = get().trip;
+          if (!current) return;
+          if ("error" in json && json.error) {
+            const fb = "fallback" in json ? json.fallback : undefined;
+            const fallbackData = fb
+              ? applyFallbackLine(current.data, req.segId, fb)
+              : current.data;
             set((s) => ({
-              trip: { ...current, data },
+              trip: { ...current, data: fallbackData },
               segState: { ...s.segState, [req.segId]: "error" },
             }));
             scheduleSave(get);
+          } else {
+            const r = json as { geometry: Position[]; distanceM: number; durationMin: number };
+            const data = applyRoute(current.data, req.segId, r);
+            set((s) => ({
+              trip: { ...current, data },
+              segState: { ...s.segState, [req.segId]: "ok" },
+            }));
+            scheduleSave(get);
           }
+        } catch {
+          if (!isRequestCurrent(get, req)) return;
+          const current = get().trip;
+          if (!current) return;
+          const fb = {
+            geometry: [req.from, req.to],
+            distanceM: 0,
+            durationMin: 0,
+          };
+          const data = applyFallbackLine(current.data, req.segId, fb);
+          set((s) => ({
+            trip: { ...current, data },
+            segState: { ...s.segState, [req.segId]: "error" },
+          }));
+          scheduleSave(get);
+        } finally {
+          active -= 1;
+          next();
         }
-      })();
+      };
+
+      const next = () => {
+        while (active < ROUTE_CONCURRENCY && queue.length > 0) {
+          const req = queue.shift()!;
+          active += 1;
+          void handle(req);
+        }
+      };
+
+      next();
     },
 
     completeFreehand: (points, mode) => {
@@ -302,25 +389,5 @@ export const useTripStore = create<TripState>((set, get) => ({
       scheduleSave(get);
     },
 
-    save: async (data) => {
-      const { trip, status } = get();
-      if (!trip || status === "saving") return;
-      const payload = data ?? trip.data;
-      set({ status: "saving" });
-      try {
-        const res = await fetch(`/api/trips/${trip.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: payload, title: trip.title ?? "" }),
-        });
-        if (!res.ok) throw new Error(`save failed: ${res.status}`);
-        const { updatedAt } = await res.json();
-        set((s) => ({
-          status: "saved",
-          trip: s.trip ? { ...s.trip, data: payload, updatedAt } : null,
-        }));
-      } catch {
-        set({ status: "error" });
-      }
-    },
+    save: () => flushSave(get),
   }));

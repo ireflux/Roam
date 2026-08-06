@@ -12,7 +12,6 @@ export class MemoryTripRepo implements TripRepo {
       shareId: input.shareId,
       ownerId: input.ownerId,
       title: input.title ?? null,
-      nickname: null,
       createdAt: now,
       updatedAt: now,
       data: input.data ?? { days: [], stops: [], segments: [] },
@@ -57,7 +56,6 @@ export class MemoryTripRepo implements TripRepo {
       .map((t) =>
         toTrip({
           ...t,
-          nickname: t.nickname ?? null,
           title: t.title ?? null,
           createdAt: new Date(t.createdAt),
           updatedAt: new Date(t.updatedAt),
@@ -67,11 +65,6 @@ export class MemoryTripRepo implements TripRepo {
 
   async setNickname(ownerId: string, nickname: string): Promise<void> {
     this.nicknames.set(ownerId, nickname);
-    for (const trip of this.trips.values()) {
-      if (trip.ownerId === ownerId) {
-        trip.nickname = nickname;
-      }
-    }
   }
 
   async getNickname(ownerId: string): Promise<string | null> {

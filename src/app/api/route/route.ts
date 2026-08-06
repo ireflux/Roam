@@ -4,6 +4,7 @@ import { getRoutingProvider } from "@/lib/routing/provider-factory";
 import { RoutingError } from "@/lib/routing/provider";
 import type { Mode, Position } from "@/lib/types";
 import { roughDistanceM } from "@/lib/trip/geo";
+import { parseJsonBody } from "@/lib/http";
 
 function parsePosition(v: unknown): Position | null {
   if (!Array.isArray(v) || v.length !== 2) return null;
@@ -15,7 +16,9 @@ function parsePosition(v: unknown): Position | null {
 }
 
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as {
+  const { body: bodyRaw, response: bodyError } = await parseJsonBody(req, 4_000);
+  if (bodyError) return bodyError;
+  const body = (bodyRaw ?? {}) as {
     mode?: Mode;
     from?: unknown;
     to?: unknown;

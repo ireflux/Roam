@@ -15,6 +15,20 @@ export class NeonTripRepo implements TripRepo {
     this.db.execute(sql`select 1`).catch(() => {});
   }
 
+  /** 仅对瞬时错误重试：网络中断/超时、5xx、429。4xx（如唯一约束冲突）立即失败，避免无谓等待。 */
+  private isRetryable(err: unknown): boolean {
+    if (!err || typeof err !== "object") return false;
+    const e = err as { code?: string | number; status?: number; message?: string };
+    if (typeof e.status === "number") return e.status >= 500 || e.status === 429;
+    if (typeof e.code === "number") return e.code >= 500 || e.code === 429;
+    if (typeof e.code === "string") {
+      if (/^(ECONNRESET|ETIMEDOUT|EAI_AGAIN|UND_ERR_SOCKET_|UND_ERR_CONNECT_)/.test(e.code)) return true;
+      if (/^P[0-9]+$/.test(e.code)) return false;
+    }
+    if (typeof e.message === "string" && /timeout|temporarily unavailable|connect/i.test(e.message)) return true;
+    return false;
+  }
+
   private async withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
     let lastErr: unknown;
     for (let i = 0; i < attempts; i++) {
@@ -22,6 +36,7 @@ export class NeonTripRepo implements TripRepo {
         return await fn();
       } catch (e) {
         lastErr = e;
+        if (!this.isRetryable(e) || i === attempts - 1) throw e;
         const ms = 200 * 2 ** i;
         await new Promise((r) => setTimeout(r, ms));
       }

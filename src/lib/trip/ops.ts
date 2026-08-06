@@ -7,7 +7,7 @@ import type {
   TripSegment,
   TripStop,
 } from "@/lib/types";
-import { roughDistanceM } from "@/lib/trip/geo";
+import { roughDistanceM, simplifyLine, uniformSample } from "@/lib/trip/geo";
 
 export interface SegmentRequest {
   segId: string;
@@ -108,8 +108,11 @@ export function removeStop(data: TripData, stopId: string): OpsResult {
   const needed: SegmentRequest[] = [];
 
   if (prev && next) {
+    // 从原始段（过滤前）继承被删站点前后的出行方式，避免恒为 driving
     const inheritMode: Mode =
-      rest.find((s) => s.fromStop === prev.id && s.toStop === stopId)?.mode ?? "driving";
+      data.segments.find((s) => s.fromStop === prev.id && s.toStop === stopId)?.mode
+      ?? data.segments.find((s) => s.fromStop === stopId && s.toStop === next.id)?.mode
+      ?? "driving";
     const seg = autoSegment(prev, next, inheritMode);
     needed.push(segmentRequest(seg));
     return {
@@ -140,6 +143,22 @@ export function removeStop(data: TripData, stopId: string): OpsResult {
   };
 }
 
+function pairKey(a: TripStop, b: TripStop): string {
+  return `${a.id}|${b.id}`;
+}
+
+/** 为新相邻对从相邻段继承出行方式（优先原方向，其次反向/相邻站点）。 */
+function inheritNeighborMode(data: TripData, a: TripStop, b: TripStop): Mode {
+  const direct = data.segments.find((s) => s.fromStop === a.id && s.toStop === b.id);
+  if (direct) return direct.mode;
+  const reverse = data.segments.find((s) => s.fromStop === b.id && s.toStop === a.id);
+  if (reverse) return reverse.mode;
+  const touching = data.segments.find(
+    (s) => s.toStop === a.id || s.fromStop === a.id || s.toStop === b.id || s.fromStop === b.id,
+  );
+  return touching?.mode ?? "driving";
+}
+
 export function reorderStops(data: TripData, dayId: string, fromIdx: number, toIdx: number): OpsResult {
   const dayStops = stopsOfDay(data, dayId);
   if (fromIdx === toIdx || fromIdx < 0 || fromIdx >= dayStops.length || toIdx < 0 || toIdx >= dayStops.length) {
@@ -155,6 +174,16 @@ export function reorderStops(data: TripData, dayId: string, fromIdx: number, toI
   );
   const nextData = { ...data, stops };
 
+  // 记录旧顺序下的相邻对及其段；重排只重算「相邻对集合差集」中的新对，方向未变的相邻对
+  // 保留段（含 freehand/snapped），不重算也不丢失手绘成果。
+  const oldPairs = new Map<string, TripSegment>();
+  for (let i = 0; i < dayStops.length - 1; i++) {
+    const a = dayStops[i];
+    const b = dayStops[i + 1];
+    const seg = data.segments.find((s) => s.fromStop === a.id && s.toStop === b.id);
+    if (seg) oldPairs.set(pairKey(a, b), seg);
+  }
+
   const needed: SegmentRequest[] = [];
   const restSegments = nextData.segments.filter(
     (s) => !dayStops.some((d) => s.fromStop === d.id || s.toStop === d.id),
@@ -164,20 +193,14 @@ export function reorderStops(data: TripData, dayId: string, fromIdx: number, toI
   for (let i = 0; i < reordered.length - 1; i++) {
     const a = reordered[i];
     const b = reordered[i + 1];
-    const existing = nextData.segments.find(
-      (s) => s.fromStop === a.id && s.toStop === b.id,
-    );
-    if (existing && existing.kind === "freehand") {
-      segments.push({ ...existing, kind: "auto", geometry: { type: "LineString", coordinates: [posOf(a), posOf(b)] }, distanceM: roughDistanceM(posOf(a), posOf(b)), durationMin: 0 });
-      needed.push(segmentRequest({ ...existing, kind: "auto", mode: existing.mode }));
-    } else if (existing && existing.kind === "auto") {
-      segments.push({ ...existing, geometry: { type: "LineString", coordinates: [posOf(a), posOf(b)] }, distanceM: roughDistanceM(posOf(a), posOf(b)), durationMin: 0 });
-      needed.push(segmentRequest(existing));
-    } else {
-      const seg = autoSegment(a, b, existing?.mode ?? "driving");
-      segments.push(seg);
-      needed.push(segmentRequest(seg));
+    const kept = oldPairs.get(pairKey(a, b));
+    if (kept) {
+      segments.push(kept);
+      continue;
     }
+    const seg = autoSegment(a, b, inheritNeighborMode(data, a, b));
+    segments.push(seg);
+    needed.push(segmentRequest(seg));
   }
 
   return { data: { ...nextData, segments }, needed };
@@ -204,6 +227,7 @@ export function applyRoute(
   segId: string,
   result: { geometry: Position[]; distanceM: number; durationMin: number },
 ): TripData {
+  const geometry = simplifyLine(result.geometry, { toleranceM: 10, maxPoints: 2500 });
   return {
     ...data,
     segments: data.segments.map((s) =>
@@ -211,7 +235,7 @@ export function applyRoute(
         ? {
             ...s,
             kind: "auto" as const,
-            geometry: { type: "LineString" as const, coordinates: result.geometry },
+            geometry: { type: "LineString" as const, coordinates: geometry },
             distanceM: result.distanceM,
             durationMin: result.durationMin,
           }
@@ -262,8 +286,9 @@ export function completeFreehand(
   mode: Mode,
 ): OpsResult {
   if (points.length < 2) return { data, needed: [] };
-  const first = points[0];
-  const last = points[points.length - 1];
+  const geometry = simplifyLine(points, { toleranceM: 8, maxPoints: 2000 });
+  const first = geometry[0];
+  const last = geometry[geometry.length - 1];
   const start = findNearStop(data.stops, first);
   const end = findNearStop(data.stops, last);
   const dayId = start?.dayId ?? end?.dayId ?? data.days[0]?.id ?? "d1";
@@ -301,7 +326,7 @@ export function completeFreehand(
     toStop: to.id,
     mode,
     kind: "freehand",
-    geometry: { type: "LineString", coordinates: points },
+    geometry: { type: "LineString", coordinates: geometry },
     distanceM: roughDistanceM(first, last),
     durationMin: 0,
   };
@@ -337,13 +362,7 @@ export function markSegmentSnapped(data: TripData, segId: string): TripData {
 }
 
 export function simplifyVertices(coords: Position[], maxPoints: number): Position[] {
-  if (coords.length <= maxPoints) return coords;
-  const step = (coords.length - 1) / (maxPoints - 1);
-  const out: Position[] = [];
-  for (let i = 0; i < maxPoints; i++) {
-    out.push(coords[Math.round(i * step)]);
-  }
-  return out;
+  return uniformSample(coords, maxPoints);
 }
 
 export function addDay(data: TripData): OpsResult {
@@ -391,7 +410,12 @@ export function moveStopToDay(data: TripData, stopId: string, dayId: string): Op
   const prev = srcIdx > 0 ? srcSorted[srcIdx - 1] : null;
   const next = srcIdx < srcSorted.length - 1 ? srcSorted[srcIdx + 1] : null;
   if (prev && next) {
-    const seg = autoSegment(prev, next, "driving");
+    // 继承被移走站点原前后段的出行方式（来源段仍存在于原始 data.segments）
+    const reconnectMode: Mode =
+      data.segments.find((s) => s.fromStop === prev.id && s.toStop === stopId)?.mode
+      ?? data.segments.find((s) => s.fromStop === stopId && s.toStop === next.id)?.mode
+      ?? "driving";
+    const seg = autoSegment(prev, next, reconnectMode);
     segments.push(seg);
     needed.push(segmentRequest(seg));
   }
@@ -400,7 +424,12 @@ export function moveStopToDay(data: TripData, stopId: string, dayId: string): Op
   if (targetSorted.length >= 2) {
     const a = targetSorted[targetSorted.length - 2];
     const b = stop;
-    const seg = autoSegment(a, b, "driving");
+    // 新尾部段继承站点原有的到达/出发方式
+    const carriedMode: Mode =
+      data.segments.find((s) => s.toStop === stopId)?.mode
+      ?? data.segments.find((s) => s.fromStop === stopId)?.mode
+      ?? "driving";
+    const seg = autoSegment(a, b, carriedMode);
     segments.push(seg);
     needed.push(segmentRequest(seg));
   }

@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { getOrCreateOwnerId } from "@/lib/auth";
 import { getRepo } from "@/lib/db";
 import { nanoid } from "nanoid";
-import { requestTooLarge } from "@/lib/http";
+import { parseJsonBody } from "@/lib/http";
 
 export async function POST(req: Request) {
-  const tooLarge = requestTooLarge(req);
-  if (tooLarge) return tooLarge;
   const ownerId = await getOrCreateOwnerId();
-  const body = (await req.json().catch(() => ({}))) as { title?: string };
+  const { body: bodyRaw, response: bodyError } = await parseJsonBody(req);
+  if (bodyError) return bodyError;
+  const body = (bodyRaw ?? {}) as { title?: string };
   const title = typeof body.title === "string" ? body.title.trim().slice(0, 100) : undefined;
   const trip = await getRepo().create({
     ownerId,

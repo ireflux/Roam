@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { getOrCreateOwnerId, setNicknameCookie } from "@/lib/auth";
 import { getRepo } from "@/lib/db";
+import { parseJsonBody } from "@/lib/http";
 
 export async function POST(req: Request) {
   const ownerId = await getOrCreateOwnerId();
-  const body = (await req.json().catch(() => ({}))) as { nickname?: string };
+  const { body: bodyRaw, response: bodyError } = await parseJsonBody(req, 4_000);
+  if (bodyError) return bodyError;
+  const body = (bodyRaw ?? {}) as { nickname?: string };
   const nickname = typeof body.nickname === "string" ? body.nickname.trim().slice(0, 30) : "";
   if (!nickname) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 

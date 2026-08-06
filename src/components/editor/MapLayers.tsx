@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { AmapMap, AmapOverlay } from "@/lib/mapTypes";
 import type { TripData } from "@/lib/types";
 import { useTripStore } from "@/lib/useTripStore";
+import { setSegmentLine } from "@/lib/mapOverlays";
 
 const EMPTY_DATA: TripData = { days: [], stops: [], segments: [] };
 const COLORS = { driving: "#2563eb", walking: "#059669", cycling: "#ea580c", freehand: "#71717a", snapped: "#7c3aed" };
@@ -28,6 +29,7 @@ export default function MapLayers({ map }: { map: AmapMap | null }) {
       const color = segment.kind === "snapped" ? COLORS.snapped : segment.kind === "freehand" ? COLORS.freehand : COLORS[segment.mode];
       const line = new window.AMap.Polyline({ path: segment.geometry.coordinates, strokeColor: color, strokeWeight: segment.id === selectedSegId ? 6 : 4, strokeOpacity: segment.id === selectedSegId ? 1 : 0.85, lineJoin: "round" });
       line.on("click", () => useTripStore.getState().selectSeg(segment.id));
+      setSegmentLine(map, segment.id, line);
       overlays.push(line);
     }
     for (const stop of data.stops) {

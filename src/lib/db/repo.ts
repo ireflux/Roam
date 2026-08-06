@@ -14,7 +14,6 @@ function toTrip(row: {
   id: string;
   shareId: string;
   ownerId: string;
-  nickname: string | null;
   title: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -24,7 +23,6 @@ function toTrip(row: {
     id: row.id,
     shareId: row.shareId,
     ownerId: row.ownerId,
-    nickname: row.nickname,
     title: row.title,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -38,7 +36,6 @@ export function toPublicTrip(trip: Trip): PublicTrip {
   return {
     id: trip.id,
     shareId: trip.shareId,
-    nickname: trip.nickname,
     title: trip.title,
     createdAt: trip.createdAt,
     updatedAt: trip.updatedAt,

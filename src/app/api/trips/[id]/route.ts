@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getOwnerId } from "@/lib/auth";
 import { getRepo } from "@/lib/db";
 import { isTripData } from "@/lib/trip/validation";
-import { requestTooLarge } from "@/lib/http";
+import { parseJsonBody } from "@/lib/http";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -16,13 +16,13 @@ export async function GET(_req: Request, { params }: Ctx) {
 }
 
 export async function PATCH(req: Request, { params }: Ctx) {
-  const tooLarge = requestTooLarge(req);
-  if (tooLarge) return tooLarge;
   const { id } = await params;
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const body = (await req.json().catch(() => ({}))) as { data?: unknown; title?: string };
+  const { body: bodyRaw, response: bodyError } = await parseJsonBody(req);
+  if (bodyError) return bodyError;
+  const body = (bodyRaw ?? {}) as { data?: unknown; title?: string };
   if (body.data === undefined && body.title === undefined) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }

@@ -35,24 +35,16 @@ export interface TripDay {
   note?: string;
 }
 
-export interface MapViewState {
-  center: Position;
-  zoom: number;
-  pitch: number;
-}
-
 export interface TripData {
   days: TripDay[];
   stops: TripStop[];
   segments: TripSegment[];
-  mapView?: MapViewState;
 }
 
 export interface Trip {
   id: string;
   shareId: string;
   ownerId: string;
-  nickname?: string | null;
   title?: string | null;
   createdAt: string;
   updatedAt: string;

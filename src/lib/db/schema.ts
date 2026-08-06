@@ -5,7 +5,6 @@ export const trips = pgTable("trips", {
   id: uuid("id").primaryKey().defaultRandom(),
   shareId: text("share_id").notNull().unique(),
   ownerId: text("owner_id").notNull(),
-  nickname: text("nickname"),
   title: text("title"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

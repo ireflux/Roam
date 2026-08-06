@@ -6,6 +6,7 @@ import {
   autoSegment,
   completeFreehand,
   markSegmentSnapped,
+  moveStopToDay,
   removeStop,
   reorderStops,
   segmentRequest,
@@ -13,7 +14,7 @@ import {
   simplifyVertices,
   updateSegmentVertex,
 } from "@/lib/trip/ops";
-import type { TripData, TripStop } from "@/lib/types";
+import type { TripData, TripSegment, TripStop } from "@/lib/types";
 
 const DAY = "d1";
 
@@ -88,6 +89,23 @@ describe("removeStop", () => {
     expect(r.data.segments).toHaveLength(0);
     expect(r.needed).toHaveLength(0);
   });
+
+  it("删除中间站点继承前段出行方式，而非恒为 driving", () => {
+    const a = stop("a", 0);
+    const b = stop("b", 1);
+    const c = stop("c", 2);
+    const data: TripData = {
+      days: [{ id: DAY, name: "d" }],
+      stops: [a, b, c],
+      segments: [
+        autoSegment(a, b, "walking"),
+        autoSegment(b, c, "driving"),
+      ],
+    };
+    const r = removeStop(data, "b");
+    expect(r.data.segments[0].mode).toBe("walking");
+    expect(r.needed[0].mode).toBe("walking");
+  });
 });
 
 describe("reorderStops", () => {
@@ -110,6 +128,48 @@ describe("reorderStops", () => {
     ]);
     expect(r.data.segments).toHaveLength(2);
     expect(r.needed.length).toBeGreaterThan(0);
+  });
+
+  it("重排后相邻对方向未变的段保留原几何且不重算", () => {
+    const a = stop("a", 0);
+    const b = stop("b", 1);
+    const c = stop("c", 2);
+    const segAB = autoSegment(a, b, "driving");
+    const segBC = autoSegment(b, c, "driving");
+    const data: TripData = {
+      days: [{ id: DAY, name: "d" }],
+      stops: [a, b, c],
+      segments: [segAB, segBC],
+    };
+    // b 移到最前：新链 b→a→c；a→c 是新对需重算，b→a 是反向需重算
+    const r = reorderStops(data, DAY, 1, 0);
+    const pairs = r.data.segments.map((s) => `${s.fromStop}->${s.toStop}`);
+    expect(pairs).toContain("b->a");
+    expect(pairs).toContain("a->c");
+    expect(r.needed).toHaveLength(2);
+  });
+
+  it("重排保留方向未变的手绘段，不降级为 auto", () => {
+    const a = stop("a", 0);
+    const b = stop("b", 1);
+    const c = stop("c", 2);
+    const freehand: TripSegment = {
+      ...autoSegment(b, c, "walking"),
+      kind: "freehand",
+      geometry: { type: "LineString", coordinates: [[1, 1], [1.5, 1.5], [2, 2]] },
+    };
+    const data: TripData = {
+      days: [{ id: DAY, name: "d" }],
+      stops: [a, b, c],
+      segments: [autoSegment(a, b, "driving"), freehand],
+    };
+    // a 移到 c 之后：新链 b→c→a；b→c 方向未变 → 保留 freehand 段，不重算
+    const r = reorderStops(data, DAY, 0, 2);
+    expect(r.data.segments).toHaveLength(2);
+    const kept = r.data.segments.find((s) => s.fromStop === "b" && s.toStop === "c")!;
+    expect(kept.kind).toBe("freehand");
+    expect(kept.geometry.coordinates).toHaveLength(3);
+    expect(r.needed.some((n) => n.segId === `${b.id}->${c.id}`)).toBe(false);
   });
 });
 
@@ -151,7 +211,7 @@ describe("applyRoute / applyFallbackLine", () => {
     };
     const segId = `${a.id}->${b.id}`;
     const next = applyRoute(data, segId, {
-      geometry: [[1, 1], [1.5, 1.5], [2, 2]],
+      geometry: [[1, 1], [1.5, 1.5], [2, 1]],
       distanceM: 500,
       durationMin: 10,
     });
@@ -185,6 +245,39 @@ describe("applyRoute / applyFallbackLine", () => {
     expect(req.from).toEqual([0, 0]);
     expect(req.to).toEqual([1, 1]);
     expect(req.mode).toBe("cycling");
+  });
+
+  it("applyRoute 压缩超长几何到容量内且保留首尾", () => {
+    const a = stop("a", 0);
+    const b = stop("b", 1);
+    const data: TripData = {
+      days: [{ id: DAY, name: "d" }],
+      stops: [a, b],
+      segments: [autoSegment(a, b, "driving")],
+    };
+    const segId = `${a.id}->${b.id}`;
+    // 一条大圆弧：点很多但基本共线，简化后应显著减少
+    const many: [number, number][] = Array.from({ length: 8_000 }, (_, i) => [i * 0.001, 0] as [number, number]);
+    const next = applyRoute(data, segId, { geometry: many, distanceM: 1000, durationMin: 10 });
+    const coords = next.segments[0].geometry.coordinates;
+    expect(coords.length).toBeLessThan(many.length);
+    expect(coords[0][0]).toBe(0);
+    expect(coords[coords.length - 1][0]).toBeCloseTo(7.999, 3);
+  });
+
+  it("applyRoute 坐标取整到 6 位小数", () => {
+    const a = stop("a", 0);
+    const b = stop("b", 1);
+    const data: TripData = {
+      days: [{ id: DAY, name: "d" }],
+      stops: [a, b],
+      segments: [autoSegment(a, b, "driving")],
+    };
+    const segId = `${a.id}->${b.id}`;
+    const next = applyRoute(data, segId, { geometry: [[1.0000004, 2.0000006], [3.0000009, 4.0000001]], distanceM: 500, durationMin: 5 });
+    const [lng, lat] = next.segments[0].geometry.coordinates[0];
+    expect(Math.round(lng * 1e6)).toBe(1000000);
+    expect(Math.round(lat * 1e6)).toBe(2000001);
   });
 });
 
@@ -230,6 +323,57 @@ describe("completeFreehand", () => {
     const data = emptyData();
     const r = completeFreehand(data, [[1, 1]], "driving");
     expect(r.data).toBe(data);
+  });
+
+  it("手绘长线会被压缩，保留首尾", () => {
+    const data = emptyData();
+    const dense: [number, number][] = Array.from({ length: 5_000 }, (_, i) => [i * 0.0001, 0.0001 * i] as [number, number]);
+    const r = completeFreehand(data, dense, "walking");
+    const coords = r.data.segments[0].geometry.coordinates;
+    expect(coords.length).toBeLessThan(dense.length);
+    expect(coords[0]).toEqual([0, 0]);
+    expect(coords[coords.length - 1][0]).toBeCloseTo(0.4999, 3);
+  });
+});
+
+describe("moveStopToDay", () => {
+  it("跨日移动继承原段出行方式", () => {
+    const d1 = { id: "d1", name: "第 1 天" };
+    const d2 = { id: "d2", name: "第 2 天" };
+    const z = { ...stop("z", 0), dayId: "d2", order: 0 };
+    const a = stop("a", 0);
+    const b = stop("b", 1);
+    const c = stop("c", 2);
+    const data: TripData = {
+      days: [d1, d2],
+      stops: [a, b, c, z],
+      segments: [
+        autoSegment(a, b, "cycling"),
+        autoSegment(b, c, "walking"),
+      ],
+    };
+    // b 移到 d2：源日 a→c 重连继承 a→b 的 cycling；d2 尾部 z→b 继承 b 到达方式 cycling
+    const r = moveStopToDay(data, "b", "d2");
+    const reconnect = r.data.segments.find((s) => s.fromStop === "a" && s.toStop === "c")!;
+    const tail = r.data.segments.find((s) => s.fromStop === "z" && s.toStop === "b")!;
+    expect(reconnect.mode).toBe("cycling");
+    expect(tail.mode).toBe("cycling");
+    expect(r.needed).toHaveLength(2);
+  });
+
+  it("无相邻段时回退 driving", () => {
+    const d1 = { id: "d1", name: "第 1 天" };
+    const d2 = { id: "d2", name: "第 2 天" };
+    const a = stop("a", 0);
+    const b = stop("b", 1);
+    const data: TripData = {
+      days: [d1, d2],
+      stops: [a, b],
+      segments: [],
+    };
+    const r = moveStopToDay(data, "a", "d2");
+    expect(r.needed).toHaveLength(0);
+    expect(r.data.stops.find((s) => s.id === "a")!.dayId).toBe("d2");
   });
 });
 
