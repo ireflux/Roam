@@ -6,7 +6,7 @@ type Ctx = { params: Promise<{ shareId: string }> };
 
 export async function GET(_req: Request, { params }: Ctx) {
   const { shareId } = await params;
-  if (!/^[A-Za-z0-9_-]{4,16}$/.test(shareId)) {
+  if (!/^[A-Za-z0-9_-]{4,32}$/.test(shareId)) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
   const trip = await getRepo().getByShareId(shareId);

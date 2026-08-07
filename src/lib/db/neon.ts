@@ -101,6 +101,16 @@ export class NeonTripRepo implements TripRepo {
     });
   }
 
+  async remove(id: string, ownerId: string): Promise<boolean> {
+    return this.withRetry(async () => {
+      const [row] = await this.db
+        .delete(schema.trips)
+        .where(and(eq(schema.trips.id, id), eq(schema.trips.ownerId, ownerId)))
+        .returning({ id: schema.trips.id });
+      return Boolean(row);
+    });
+  }
+
   async listByOwner(ownerId: string, limit = 10): Promise<Trip[]> {
     return this.withRetry(async () => {
       const rows = await this.db

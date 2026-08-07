@@ -26,8 +26,15 @@ export function getCachedRoute(mode: Mode, from: Position, to: Position): RouteR
   return entry.result;
 }
 
+/**
+ * 进程内 Map 缓存：单实例有效，Serverless 多实例下命中率有限（未来可迁移
+ * 到 route_cache 表或 Redis）。淘汰为真 LRU：set 前先 delete 刷新插入顺序，
+ * keys().next() 即最久未使用。
+ */
 export function setCachedRoute(mode: Mode, from: Position, to: Position, result: RouteResult): void {
-  store.set(keyOf(mode, from, to), { result, ts: Date.now() });
+  const key = keyOf(mode, from, to);
+  store.delete(key);
+  store.set(key, { result, ts: Date.now() });
   if (store.size > MAX_ENTRIES) {
     const oldest = store.keys().next().value as string;
     store.delete(oldest);

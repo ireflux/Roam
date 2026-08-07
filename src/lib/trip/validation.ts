@@ -45,12 +45,24 @@ export function isTripData(value: unknown): value is TripData {
       typeof segment?.id === "string"
       && typeof segment.fromStop === "string"
       && typeof segment.toStop === "string"
-      && (segment.mode === "driving" || segment.mode === "walking" || segment.mode === "cycling")
+      && (segment.mode === "driving" || segment.mode === "walking" || segment.mode === "cycling" || segment.mode === "transit")
       && (segment.kind === "auto" || segment.kind === "freehand" || segment.kind === "snapped")
       && segment.geometry?.type === "LineString"
       && Array.isArray(segment.geometry.coordinates)
       && segment.geometry.coordinates.length >= 2
       && segment.geometry.coordinates.length <= MAX_POINTS_PER_SEGMENT
-      && segment.geometry.coordinates.every(isPosition),
+      && segment.geometry.coordinates.every(isPosition)
+      && (segment.parts === undefined || (
+        Array.isArray(segment.parts)
+        && segment.parts.length > 0
+        && segment.parts.length <= 32
+        && segment.parts.every((part) =>
+          (part?.kind === "transit" || part?.kind === "walking")
+          && Array.isArray(part.coordinates)
+          && part.coordinates.length >= 2
+          && part.coordinates.length <= MAX_POINTS_PER_SEGMENT
+          && part.coordinates.every(isPosition),
+        )
+      )),
     );
 }

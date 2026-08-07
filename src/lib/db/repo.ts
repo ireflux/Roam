@@ -5,6 +5,8 @@ export interface TripRepo {
   getById(id: string): Promise<Trip | null>;
   getByShareId(shareId: string): Promise<Trip | null>;
   update(id: string, ownerId: string, patch: { data?: unknown; title?: string }): Promise<Trip | null>;
+  /** 硬删除；仅当 id 存在且属于 ownerId 时返回 true，否则 false。 */
+  remove(id: string, ownerId: string): Promise<boolean>;
   listByOwner(ownerId: string, limit?: number): Promise<Trip[]>;
   setNickname(ownerId: string, nickname: string): Promise<void>;
   getNickname(ownerId: string): Promise<string | null>;

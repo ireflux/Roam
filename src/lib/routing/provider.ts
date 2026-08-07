@@ -1,9 +1,11 @@
-import type { Mode, Position } from "@/lib/types";
+import type { Mode, Position, SegmentPart } from "@/lib/types";
 
 export interface RouteResult {
   geometry: Position[];
   distanceM: number;
   durationMin: number;
+  /** 公交/地铁段的可选子段（公交实线 + 步行虚线），供地图分段渲染。 */
+  parts?: SegmentPart[];
 }
 
 export class RoutingError extends Error {

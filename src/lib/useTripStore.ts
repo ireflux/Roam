@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import type { AmapMap } from "@/lib/mapTypes";
-import type { Mode, Position, Trip, TripData } from "@/lib/types";
+import type { Mode, Position, SegmentPart, Trip, TripData } from "@/lib/types";
 import {
   addDay as opAddDay,
   addStop as opAddStop,
@@ -13,7 +13,10 @@ import {
   moveStopToDay as opMoveStopToDay,
   removeDay as opRemoveDay,
   removeStop as opRemoveStop,
+  renameDay as opRenameDay,
+  reorderDays as opReorderDays,
   reorderStops as opReorderStops,
+  segmentRequest,
   setSegmentMode as opSetSegmentMode,
   updateSegmentVertex,
   updateStop as opUpdateStop,
@@ -44,15 +47,19 @@ interface TripState {
   selectSeg: (id: string | null) => void;
 
   setTitle: (title: string) => void;
-  addStopAt: (input: { dayId?: string; name: string; lat: number; lng: number; mode: Mode }) => void;
+  addStopAt: (input: { dayId?: string; name: string; lat: number; lng: number; mode: Mode }) => string | undefined;
+  setStopName: (stopId: string, name: string) => void;
   removeStop: (stopId: string) => void;
   reorder: (dayId: string, fromIdx: number, toIdx: number) => void;
   setMode: (segId: string, mode: Mode) => void;
   runNeeded: (needed: SegmentRequest[]) => void;
+  retrySegment: (segId: string) => void;
   completeFreehand: (points: Position[], mode: Mode) => void;
   moveVertex: (segId: string, vertexIndex: number, position: Position, commit: boolean) => void;
   addDay: () => void;
   removeDay: (dayId: string) => void;
+  renameDay: (dayId: string, name: string) => void;
+  reorderDays: (fromIdx: number, toIdx: number) => void;
   moveStopToDay: (stopId: string, dayId: string) => void;
   updateStop: (stopId: string, patch: { name?: string; note?: string; category?: string }) => void;
   undo: () => void;
@@ -79,8 +86,12 @@ function clearSaveTimer() {
   }
 }
 
+/**
+ * 结构性共享：ops 全部不可变（见 ops.ts 头注释），历史版本可安全持有引用，
+ * 无需深拷贝。undo/redo 为 O(1)，内存成本仅为共享子树。
+ */
 function pushHistory(data: TripData) {
-  undoStack.push(JSON.parse(JSON.stringify(data)) as TripData);
+  undoStack.push(data);
   if (undoStack.length > UNDO_LIMIT) undoStack.shift();
   redoStack.length = 0;
   useTripStore.setState({ canUndo: undoStack.length > 0, canRedo: false });
@@ -189,22 +200,43 @@ export const useTripStore = create<TripState>((set, get) => ({
     selectSeg: (id) => set({ selectedSegId: id, selectedStopId: null }),
 
     setTitle: (title) => {
+      // 标题是元数据，不进 undo/redo；保留防抖自动保存
       const { trip } = get();
       if (!trip) return;
-      pushHistory(trip.data);
       set({ trip: { ...trip, title } });
       scheduleSave(get);
     },
 
     addStopAt: (input) => {
       const { trip } = get();
-      if (!trip) return;
+      if (!trip) return undefined;
       pushHistory(trip.data);
       const dayId = input.dayId ?? trip.data.days[0]?.id ?? "d1";
       const res = opAddStop(trip.data, { ...input, dayId });
+      const newStopId = res.data.stops.find(
+        (s) => s.dayId === dayId && s.lat === input.lat && s.lng === input.lng,
+      )?.id;
       set({ trip: { ...trip, data: res.data }, tool: "select" });
       scheduleSave(get);
       if (res.needed.length > 0) get().runNeeded(res.needed);
+      return newStopId;
+    },
+
+    /** 逆地理编码等自动命名：不进 undo/redo（避免污染撤销栈），保留自动保存。 */
+    setStopName: (stopId, name) => {
+      const { trip } = get();
+      if (!trip) return;
+      const trimmed = name.trim().slice(0, 100);
+      if (!trimmed) return;
+      const current = trip.data.stops.find((s) => s.id === stopId);
+      if (!current || current.name) return;
+      set({
+        trip: {
+          ...trip,
+          data: { ...trip.data, stops: trip.data.stops.map((s) => (s.id === stopId ? { ...s, name: trimmed } : s)) },
+        },
+      });
+      scheduleSave(get);
     },
 
     removeStop: (stopId) => {
@@ -221,7 +253,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       const { trip } = get();
       if (!trip) return;
       const res = opReorderStops(trip.data, dayId, fromIdx, toIdx);
-      if (res.data === trip.data) return;
+      if (!res.changed) return;
       pushHistory(trip.data);
       set({ trip: { ...trip, data: res.data } });
       scheduleSave(get);
@@ -253,8 +285,8 @@ export const useTripStore = create<TripState>((set, get) => ({
             body: JSON.stringify({ mode: req.mode, from: req.from, to: req.to }),
           });
           const json = (await res.json()) as
-            | { geometry: Position[]; distanceM: number; durationMin: number; fallback?: boolean }
-            | { error: string; fallback?: { geometry: Position[]; distanceM: number; durationMin: number } };
+            | { geometry: Position[]; distanceM: number; durationMin: number; fallback?: boolean; parts?: SegmentPart[] }
+            | { error: string; fallback?: { geometry: Position[]; distanceM: number; durationMin: number; parts?: SegmentPart[] } };
           if (!isRequestCurrent(get, req)) return;
           const current = get().trip;
           if (!current) return;
@@ -269,7 +301,7 @@ export const useTripStore = create<TripState>((set, get) => ({
             }));
             scheduleSave(get);
           } else {
-            const r = json as { geometry: Position[]; distanceM: number; durationMin: number };
+            const r = json as { geometry: Position[]; distanceM: number; durationMin: number; parts?: SegmentPart[] };
             const data = applyRoute(current.data, req.segId, r);
             set((s) => ({
               trip: { ...current, data },
@@ -307,6 +339,14 @@ export const useTripStore = create<TripState>((set, get) => ({
       };
 
       next();
+    },
+
+    retrySegment: (segId) => {
+      const { trip } = get();
+      if (!trip) return;
+      const seg = trip.data.segments.find((s) => s.id === segId);
+      if (!seg) return;
+      get().runNeeded([segmentRequest(seg)]);
     },
 
     completeFreehand: (points, mode) => {
@@ -347,12 +387,32 @@ export const useTripStore = create<TripState>((set, get) => ({
       scheduleSave(get);
     },
 
+    renameDay: (dayId, name) => {
+      const { trip } = get();
+      if (!trip) return;
+      const res = opRenameDay(trip.data, dayId, name);
+      if (!res.changed) return;
+      pushHistory(trip.data);
+      set({ trip: { ...trip, data: res.data } });
+      scheduleSave(get);
+    },
+
+    reorderDays: (fromIdx, toIdx) => {
+      const { trip } = get();
+      if (!trip) return;
+      const res = opReorderDays(trip.data, fromIdx, toIdx);
+      if (!res.changed) return;
+      pushHistory(trip.data);
+      set({ trip: { ...trip, data: res.data } });
+      scheduleSave(get);
+    },
+
     moveStopToDay: (stopId, dayId) => {
       const { trip } = get();
       if (!trip) return;
-      pushHistory(trip.data);
       const res = opMoveStopToDay(trip.data, stopId, dayId);
-      if (res.data === trip.data) return;
+      if (!res.changed) return;
+      pushHistory(trip.data);
       set({ trip: { ...trip, data: res.data } });
       scheduleSave(get);
       if (res.needed.length > 0) get().runNeeded(res.needed);

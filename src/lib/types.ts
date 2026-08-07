@@ -1,9 +1,15 @@
-export type Mode = "driving" | "walking" | "cycling";
+export type Mode = "driving" | "walking" | "cycling" | "transit";
 export type SegmentKind = "auto" | "freehand" | "snapped";
 export type Position = [number, number];
 
 export interface LineGeometry {
   type: "LineString";
+  coordinates: Position[];
+}
+
+/** 公交/地铁段的子段：公交实线 + 步行虚线，分别渲染以展示换乘。 */
+export interface SegmentPart {
+  kind: "transit" | "walking";
   coordinates: Position[];
 }
 
@@ -27,6 +33,8 @@ export interface TripSegment {
   geometry: LineGeometry;
   distanceM?: number;
   durationMin?: number;
+  /** 公交/地铁段的可选子段（公交实线 + 步行虚线）；其余出行方式不设置。 */
+  parts?: SegmentPart[];
 }
 
 export interface TripDay {
@@ -64,10 +72,12 @@ export const MODE_LABEL: Record<Mode, string> = {
   driving: "驾车",
   walking: "步行",
   cycling: "骑行",
+  transit: "公交/地铁",
 };
 
 export const MODE_ICON: Record<Mode, string> = {
   driving: "🚗",
   walking: "🚶",
   cycling: "🚲",
+  transit: "🚇",
 };

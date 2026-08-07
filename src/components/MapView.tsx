@@ -2,12 +2,24 @@
 
 import AMapLoader from "@amap/amap-jsapi-loader";
 import { useEffect, useRef, useState } from "react";
-import type { AmapMap } from "@/lib/mapTypes";
+import type { AmapMap, AmapNamespace } from "@/lib/mapTypes";
 
 export const DEFAULT_CENTER: [number, number] = [104.1954, 35.8617];
 export const DEFAULT_ZOOM = 4;
 
-export default function MapView({ className, onLoad }: { className?: string; onLoad?: (map: AmapMap) => void }) {
+// 生产环境安全配置（skill 最佳实践）：
+// 若配置 NEXT_PUBLIC_AMAP_PROXY=true，前端只声明 serviceHost 指向同源代理，
+// securityJsCode 仅存在于服务端（AMAP_SECURITY_JS_CODE），由 /api/amap-proxy 追加，绝不暴露到浏览器。
+// 仅在未开启代理时使用 NEXT_PUBLIC_AMAP_SECURITY_JS_CODE（开发环境明文，2021-12-02 后创建的 key 必须）。
+function applySecurityConfig() {
+  if (process.env.NEXT_PUBLIC_AMAP_PROXY === "true") {
+    window._AMapSecurityConfig = { serviceHost: "/api/amap-proxy" };
+  } else if (process.env.NEXT_PUBLIC_AMAP_SECURITY_JS_CODE) {
+    window._AMapSecurityConfig = { securityJsCode: process.env.NEXT_PUBLIC_AMAP_SECURITY_JS_CODE };
+  }
+}
+
+export default function MapView({ className, onLoad }: { className?: string; onLoad?: (map: AmapMap | null) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onLoadRef = useRef(onLoad);
   const [error, setError] = useState<string | null>(null);
@@ -22,22 +34,25 @@ export default function MapView({ className, onLoad }: { className?: string; onL
     let waitObserver: ResizeObserver | null = null;
     let resizeObserver: ResizeObserver | null = null;
 
-    const initMap = (): boolean => {
+    const initMap = (AMap: AmapNamespace): boolean => {
       const container = containerRef.current;
-      if (!container || !window.AMap || map || cancelled) return true;
-      // 容器尚无尺寸时初始化会白屏，先等待其获得尺寸
-      const rect = container.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return false;
+      if (container && !map && !cancelled) {
+        // 容器尚无尺寸时初始化会白屏，先等待其获得尺寸
+        const rect = container.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return false;
+      } else {
+        return true;
+      }
 
-      map = new window.AMap.Map(container, {
+      map = new AMap.Map(container, {
         center: DEFAULT_CENTER,
         zoom: DEFAULT_ZOOM,
         viewMode: "2D",
         resizeEnable: true,
       });
 
-      if (window.AMap.ToolBar) {
-        map.add(new window.AMap.ToolBar());
+      if (AMap.ToolBar) {
+        map.add(new AMap.ToolBar());
       }
 
       // 容器尺寸变化时主动触发重绘；卸载时务必 disconnect，否则会在已销毁的 map 上触发回调
@@ -55,20 +70,18 @@ export default function MapView({ className, onLoad }: { className?: string; onL
       return true;
     };
 
-    // 官方规范：JSAPI 2.0 安全密钥必须在加载前设置（@amap/amap-jsapi-loader）
-    if (process.env.NEXT_PUBLIC_AMAP_SECURITY_JS_CODE) {
-      window._AMapSecurityConfig = { securityJsCode: process.env.NEXT_PUBLIC_AMAP_SECURITY_JS_CODE };
-    }
+    // 官方规范：JSAPI 2.0 安全配置必须在 AMapLoader.load 之前设置
+    applySecurityConfig();
 
     // 官方推荐的加载方式：https://lbs.amap.com/api/javascript-api-v2/guide/abc/load
     AMapLoader.load({ key, version: "2.0", plugins: ["AMap.ToolBar"] })
-      .then(() => {
+      .then((AMap: AmapNamespace) => {
         if (cancelled) return;
-        if (initMap()) return;
+        if (initMap(AMap)) return;
         const container = containerRef.current;
         if (!container) return;
         waitObserver = new ResizeObserver(() => {
-          if (initMap()) waitObserver?.disconnect();
+          if (initMap(AMap)) waitObserver?.disconnect();
         });
         waitObserver.observe(container);
       })
@@ -81,6 +94,9 @@ export default function MapView({ className, onLoad }: { className?: string; onL
       waitObserver?.disconnect();
       resizeObserver?.disconnect();
       map?.destroy();
+      // 通知调用方 map 已销毁：否则全局 store 会残留已销毁实例，
+      // 下次进入编辑器时 MapLayers 在其上 add() 直接抛错导致整页崩溃
+      onLoadRef.current?.(null);
     };
   }, [key]);
 

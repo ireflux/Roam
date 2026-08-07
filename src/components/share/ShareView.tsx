@@ -5,15 +5,17 @@ import dynamic from "next/dynamic";
 import type { AmapMap, AmapOverlay } from "@/lib/mapTypes";
 import type { Mode, PublicTrip, TripData } from "@/lib/types";
 import { formatDistance, formatDuration } from "@/lib/trip/geo";
+import { useDayWeather, WeatherBadge } from "@/components/weather/useDayWeather";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
-const COLOR: Record<Mode, string> = { driving: "#2563eb", walking: "#059669", cycling: "#ea580c" };
+const COLOR: Record<Mode, string> = { driving: "#2563eb", walking: "#059669", cycling: "#ea580c", transit: "#0891b2" };
 
-export default function ShareView({ trip }: { trip: PublicTrip }) {
+export default function ShareView({ trip, nickname }: { trip: PublicTrip; nickname?: string | null }) {
   const [map, setMap] = useState<AmapMap | null>(null);
   const [playing, setPlaying] = useState(false);
   const calc = useMemo(() => summarize(trip.data), [trip.data]);
-  return <main className="flex h-dvh w-full overflow-hidden"><section className="relative h-full flex-1 min-h-0"><MapView className="absolute inset-0" onLoad={setMap} />{map && <ShareLayers map={map} data={trip.data} playing={playing} />}<button onClick={() => setPlaying((value) => !value)} className="absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-full bg-white px-5 py-2 text-sm font-medium shadow-lg hover:scale-105">{playing ? "⏸ 暂停" : "▶ 播放全程"}</button></section><aside className="flex w-full max-w-md flex-col overflow-hidden border-l border-zinc-200 bg-white"><header className="border-b border-zinc-200 p-5"><h1 className="text-xl font-bold">{trip.title || "未命名路线"}</h1><p className="mt-1 text-sm text-zinc-500">{trip.data.days.length} 天 · {trip.data.stops.length} 个地点 · {formatDistance(calc.totalM)}{calc.totalMin > 0 && ` · 约 ${formatDuration(calc.totalMin)}`}</p></header><div className="flex-1 overflow-y-auto">{trip.data.days.map((day, dayIndex) => <section key={day.id} className="border-b border-zinc-100 p-5"><h2 className="mb-3 text-sm font-semibold text-zinc-500">第 {dayIndex + 1} 天</h2><ol className="space-y-2">{trip.data.stops.filter((stop) => stop.dayId === day.id).sort((a, b) => a.order - b.order).map((stop, index) => <li key={stop.id} className="rounded-xl border border-zinc-200 px-4 py-3"><div className="flex items-center gap-3"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-700">{index + 1}</span><div className="min-w-0 flex-1"><div className="truncate font-medium">{stop.name || "未命名地点"}</div>{stop.note && <div className="mt-0.5 truncate text-xs text-zinc-400">{stop.note}</div>}</div></div></li>)}</ol></section>)}</div></aside></main>;
+  const dayWeather = useDayWeather(trip.data.stops);
+  return <main className="flex h-dvh w-full overflow-hidden"><section className="relative h-full flex-1 min-h-0"><MapView className="absolute inset-0" onLoad={setMap} />{map && <ShareLayers map={map} data={trip.data} playing={playing} />}<button onClick={() => setPlaying((value) => !value)} className="absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-full bg-white px-5 py-2 text-sm font-medium shadow-lg hover:scale-105">{playing ? "⏸ 暂停" : "▶ 播放全程"}</button></section><aside className="flex w-full max-w-md flex-col overflow-hidden border-l border-zinc-200 bg-white"><header className="border-b border-zinc-200 p-5"><h1 className="text-xl font-bold">{trip.title || "未命名路线"}</h1><p className="mt-1 text-sm text-zinc-500">{nickname && <span className="text-zinc-400">by {nickname} · </span>}{trip.data.days.length} 天 · {trip.data.stops.length} 个地点 · {formatDistance(calc.totalM)}{calc.totalMin > 0 && ` · 约 ${formatDuration(calc.totalMin)}`}</p></header><div className="flex-1 overflow-y-auto">{trip.data.days.map((day, dayIndex) => <section key={day.id} className="border-b border-zinc-100 p-5"><div className="mb-3 flex items-baseline justify-between gap-2"><h2 className="shrink-0 text-sm font-semibold text-zinc-500">{day.name ?? `第 ${dayIndex + 1} 天`}</h2><WeatherBadge info={dayWeather[day.id]} /></div><ol className="space-y-2">{trip.data.stops.filter((stop) => stop.dayId === day.id).sort((a, b) => a.order - b.order).map((stop, index) => <li key={stop.id} className="rounded-xl border border-zinc-200 px-4 py-3"><div className="flex items-center gap-3"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-700">{index + 1}</span><div className="min-w-0 flex-1"><div className="truncate font-medium">{stop.name || "未命名地点"}</div>{stop.note && <div className="mt-0.5 truncate text-xs text-zinc-400">{stop.note}</div>}</div></div></li>)}</ol></section>)}</div></aside></main>;
 }
 
 function ShareLayers({ map, data, playing }: { map: AmapMap; data: TripData; playing: boolean }) {
@@ -21,14 +23,39 @@ function ShareLayers({ map, data, playing }: { map: AmapMap; data: TripData; pla
   const playRef = useRef<AmapOverlay | null>(null);
   useEffect(() => {
     if (!window.AMap) return;
-    map.remove(overlaysRef.current);
+    try {
+      map.remove(overlaysRef.current);
+    } catch {
+      // 防御：map 可能已被 MapView 销毁
+    }
     const overlays: AmapOverlay[] = [
-      ...data.segments.map((segment) => new window.AMap!.Polyline({ path: segment.geometry.coordinates, strokeColor: COLOR[segment.mode], strokeWeight: 4, strokeOpacity: 0.9 })),
+      ...data.segments.flatMap((segment) => {
+        const parts = segment.parts && segment.parts.length > 0
+          ? segment.parts
+          : [{ kind: segment.mode as "transit" | "walking" | "driving" | "cycling", coordinates: segment.geometry.coordinates }];
+        return parts.map((part) => new window.AMap!.Polyline({
+          path: part.coordinates,
+          strokeColor: COLOR[segment.mode],
+          strokeWeight: 4,
+          strokeOpacity: 0.9,
+          strokeStyle: part.kind === "walking" ? "dashed" : undefined,
+        }));
+      }),
       ...data.stops.map((stop) => new window.AMap!.Marker({ position: [stop.lng, stop.lat], content: '<span style="display:block;width:16px;height:16px;border:2px solid #059669;border-radius:50%;background:white"></span>', anchor: "center" })),
     ];
-    map.add(overlays); overlaysRef.current = overlays;
-    if (overlays.length) map.setFitView(overlays, true, [48, 48, 48, 380], 16);
-    return () => map.remove(overlays);
+    try {
+      map.add(overlays); overlaysRef.current = overlays;
+      if (overlays.length) map.setFitView(overlays, true, [48, 48, 48, 380], 16);
+    } catch {
+      // 同上：map 已销毁时静默跳过
+    }
+    return () => {
+      try {
+        map.remove(overlays);
+      } catch {
+        // 同上
+      }
+    };
   }, [map, data]);
   useEffect(() => {
     const points = data.segments.flatMap((segment) => segment.geometry.coordinates);

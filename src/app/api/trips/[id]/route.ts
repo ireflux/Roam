@@ -42,3 +42,12 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
   return NextResponse.json({ ok: true, updatedAt: trip.updatedAt });
 }
+
+export async function DELETE(_req: Request, { params }: Ctx) {
+  const { id } = await params;
+  const ownerId = await getOwnerId();
+  if (!ownerId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const deleted = await getRepo().remove(id, ownerId);
+  if (!deleted) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  return NextResponse.json({ ok: true }, { status: 200 });
+}

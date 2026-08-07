@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addDay,
   addStop,
   applyFallbackLine,
   applyRoute,
@@ -7,7 +8,10 @@ import {
   completeFreehand,
   markSegmentSnapped,
   moveStopToDay,
+  removeDay,
   removeStop,
+  renameDay,
+  reorderDays,
   reorderStops,
   segmentRequest,
   setSegmentMode,
@@ -402,5 +406,91 @@ describe("simplifyVertices", () => {
   it("短线原样返回", () => {
     const coords: [number, number][] = [[0, 0], [1, 1]];
     expect(simplifyVertices(coords, 10)).toHaveLength(2);
+  });
+});
+
+describe("changed 标志", () => {
+  it("addStop 产生变更", () => {
+    const r = addStop(emptyData(), { dayId: DAY, name: "A", lat: 1, lng: 1, mode: "driving" });
+    expect(r.changed).toBe(true);
+  });
+
+  it("removeStop 不存在的站点是 no-op", () => {
+    const data = emptyData();
+    const r = removeStop(data, "nope");
+    expect(r.changed).toBe(false);
+    expect(r.data).toBe(data);
+  });
+
+  it("reorderStops 同位置是 no-op", () => {
+    let data = emptyData();
+    data = addStop(data, { dayId: DAY, name: "A", lat: 1, lng: 1, mode: "driving" }).data;
+    data = addStop(data, { dayId: DAY, name: "B", lat: 2, lng: 2, mode: "driving" }).data;
+    const r = reorderStops(data, DAY, 1, 1);
+    expect(r.changed).toBe(false);
+    expect(r.data).toBe(data);
+  });
+
+  it("moveStopToDay 移动到同一天是 no-op", () => {
+    const a = stop("a", 0);
+    const data: TripData = { days: [{ id: DAY, name: "d" }], stops: [a], segments: [] };
+    const r = moveStopToDay(data, "a", DAY);
+    expect(r.changed).toBe(false);
+  });
+
+  it("removeDay 仅剩一天时是 no-op", () => {
+    const data = emptyData();
+    const r = removeDay(data, DAY);
+    expect(r.changed).toBe(false);
+    expect(r.data).toBe(data);
+  });
+
+  it("addDay 产生变更", () => {
+    const r = addDay(emptyData());
+    expect(r.changed).toBe(true);
+  });
+});
+
+describe("renameDay", () => {
+  it("重命名天", () => {
+    const data = emptyData();
+    const r = renameDay(data, DAY, "  上海 Day 1  ");
+    expect(r.changed).toBe(true);
+    expect(r.data.days[0].name).toBe("上海 Day 1");
+  });
+
+  it("空名称重置为 undefined（fallback 自动命名）", () => {
+    const data: TripData = { days: [{ id: DAY, name: "自定义" }], stops: [], segments: [] };
+    const r = renameDay(data, DAY, "   ");
+    expect(r.changed).toBe(true);
+    expect(r.data.days[0].name).toBeUndefined();
+  });
+
+  it("同名或不存在是 no-op", () => {
+    const data: TripData = { days: [{ id: DAY, name: "自定义" }], stops: [], segments: [] };
+    expect(renameDay(data, DAY, "自定义").changed).toBe(false);
+    expect(renameDay(data, "nope", "x").changed).toBe(false);
+  });
+});
+
+describe("reorderDays", () => {
+  it("重排天数数组顺序，不影响站点归属", () => {
+    const d1 = { id: "d1", name: undefined };
+    const d2 = { id: "d2", name: undefined };
+    const d3 = { id: "d3", name: undefined };
+    const s1 = { ...stop("a", 0), dayId: "d1" };
+    const s2 = { ...stop("b", 0), dayId: "d2" };
+    const data: TripData = { days: [d1, d2, d3], stops: [s1, s2], segments: [] };
+    const r = reorderDays(data, 0, 2);
+    expect(r.changed).toBe(true);
+    expect(r.data.days.map((d) => d.id)).toEqual(["d2", "d3", "d1"]);
+    expect(r.data.stops.find((s) => s.id === "a")!.dayId).toBe("d1");
+  });
+
+  it("同位置或越界是 no-op", () => {
+    const data = emptyData();
+    expect(reorderDays(data, 0, 0).changed).toBe(false);
+    expect(reorderDays(data, 0, 5).changed).toBe(false);
+    expect(reorderDays(data, -1, 1).changed).toBe(false);
   });
 });

@@ -48,6 +48,13 @@ export class MemoryTripRepo implements TripRepo {
     return updated;
   }
 
+  async remove(id: string, ownerId: string): Promise<boolean> {
+    const trip = this.trips.get(id);
+    if (!trip || trip.ownerId !== ownerId) return false;
+    this.trips.delete(id);
+    return true;
+  }
+
   async listByOwner(ownerId: string, limit = 10): Promise<Trip[]> {
     return [...this.trips.values()]
       .filter((t) => t.ownerId === ownerId)

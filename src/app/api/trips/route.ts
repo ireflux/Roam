@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   const title = typeof body.title === "string" ? body.title.trim().slice(0, 100) : undefined;
   const trip = await getRepo().create({
     ownerId,
-    shareId: nanoid(8),
+    shareId: nanoid(16),
     title: title || undefined,
     data: { days: [], stops: [], segments: [] },
   });

@@ -2,12 +2,20 @@ import { nanoid } from "nanoid";
 import type {
   Mode,
   Position,
+  SegmentPart,
   TripData,
   TripDay,
   TripSegment,
   TripStop,
 } from "@/lib/types";
 import { roughDistanceM, simplifyLine, uniformSample } from "@/lib/trip/geo";
+
+/**
+ * 不可变契约：本文件所有操作绝不原地修改 data，总是返回新对象/新数组
+ * （spread + map + filter 拷贝）。依赖此契约的调用方：
+ * - useTripStore.pushHistory 以引用方式持有历史版本（结构性共享），不做深拷贝；
+ * - no-op 时返回与原 data 相同的引用，`OpsResult.changed` 即由此推导。
+ */
 
 export interface SegmentRequest {
   segId: string;
@@ -19,6 +27,12 @@ export interface SegmentRequest {
 export interface OpsResult {
   data: TripData;
   needed: SegmentRequest[];
+  /** 本次操作是否实际改变了 data（no-op 返回 false，且 data 与原引用相同）。 */
+  changed: boolean;
+}
+
+function result(prev: TripData, data: TripData, needed: SegmentRequest[]): OpsResult {
+  return { data, needed, changed: data !== prev };
 }
 
 function ensureDay(data: TripData, dayId: string): TripData {
@@ -84,21 +98,18 @@ export function addStop(
   if (prev) {
     const seg = autoSegment(prev, stop, input.mode);
     needed.push(segmentRequest(seg));
-    return {
-      data: {
-        ...withDay,
-        stops: [...withDay.stops, stop],
-        segments: [...withDay.segments, seg],
-      },
-      needed,
-    };
+    return result(data, {
+      ...withDay,
+      stops: [...withDay.stops, stop],
+      segments: [...withDay.segments, seg],
+    }, needed);
   }
-  return { data: { ...withDay, stops: [...withDay.stops, stop] }, needed };
+  return result(data, { ...withDay, stops: [...withDay.stops, stop] }, needed);
 }
 
 export function removeStop(data: TripData, stopId: string): OpsResult {
   const stop = data.stops.find((s) => s.id === stopId);
-  if (!stop) return { data, needed: [] };
+  if (!stop) return result(data, data, []);
   const dayStops = stopsOfDay(data, stop.dayId);
   const idx = dayStops.findIndex((s) => s.id === stopId);
   const prev = idx > 0 ? dayStops[idx - 1] : null;
@@ -115,32 +126,26 @@ export function removeStop(data: TripData, stopId: string): OpsResult {
       ?? "driving";
     const seg = autoSegment(prev, next, inheritMode);
     needed.push(segmentRequest(seg));
-    return {
-      data: {
-        ...data,
-        stops: data.stops
-          .filter((s) => s.id !== stopId)
-          .map((s) =>
-            s.dayId === stop.dayId && s.order > stop.order ? { ...s, order: s.order - 1 } : s,
-          ),
-        segments: [...rest, seg],
-      },
-      needed,
-    };
-  }
-
-  return {
-    data: {
+    return result(data, {
       ...data,
       stops: data.stops
         .filter((s) => s.id !== stopId)
         .map((s) =>
           s.dayId === stop.dayId && s.order > stop.order ? { ...s, order: s.order - 1 } : s,
         ),
-      segments: rest,
-    },
-    needed,
-  };
+      segments: [...rest, seg],
+    }, needed);
+  }
+
+  return result(data, {
+    ...data,
+    stops: data.stops
+      .filter((s) => s.id !== stopId)
+      .map((s) =>
+        s.dayId === stop.dayId && s.order > stop.order ? { ...s, order: s.order - 1 } : s,
+      ),
+    segments: rest,
+  }, needed);
 }
 
 function pairKey(a: TripStop, b: TripStop): string {
@@ -162,7 +167,7 @@ function inheritNeighborMode(data: TripData, a: TripStop, b: TripStop): Mode {
 export function reorderStops(data: TripData, dayId: string, fromIdx: number, toIdx: number): OpsResult {
   const dayStops = stopsOfDay(data, dayId);
   if (fromIdx === toIdx || fromIdx < 0 || fromIdx >= dayStops.length || toIdx < 0 || toIdx >= dayStops.length) {
-    return { data, needed: [] };
+    return result(data, data, []);
   }
   const reordered = [...dayStops];
   const [moved] = reordered.splice(fromIdx, 1);
@@ -203,31 +208,37 @@ export function reorderStops(data: TripData, dayId: string, fromIdx: number, toI
     needed.push(segmentRequest(seg));
   }
 
-  return { data: { ...nextData, segments }, needed };
+  return result(data, { ...nextData, segments }, needed);
 }
 
 export function setSegmentMode(data: TripData, segId: string, mode: Mode): OpsResult {
   const seg = data.segments.find((s) => s.id === segId);
-  if (!seg) return { data, needed: [] };
+  if (!seg) return result(data, data, []);
   if (seg.kind !== "auto") {
-    return {
-      data: { ...data, segments: data.segments.map((s) => (s.id === segId ? { ...s, mode, kind: "auto" as const } : s)) },
-      needed: [],
-    };
+    return result(data, {
+      ...data,
+      segments: data.segments.map((s) => (s.id === segId ? { ...s, mode, kind: "auto" as const } : s)),
+    }, []);
   }
   const updated: TripSegment = { ...seg, mode, kind: "auto", durationMin: 0 };
-  return {
-    data: { ...data, segments: data.segments.map((s) => (s.id === segId ? updated : s)) },
-    needed: [segmentRequest(updated)],
-  };
+  return result(data, { ...data, segments: data.segments.map((s) => (s.id === segId ? updated : s)) }, [segmentRequest(updated)]);
 }
 
 export function applyRoute(
   data: TripData,
   segId: string,
-  result: { geometry: Position[]; distanceM: number; durationMin: number },
+  result: {
+    geometry: Position[];
+    distanceM: number;
+    durationMin: number;
+    parts?: SegmentPart[];
+  },
 ): TripData {
   const geometry = simplifyLine(result.geometry, { toleranceM: 10, maxPoints: 2500 });
+  const parts = result.parts?.map((part) => ({
+    kind: part.kind,
+    coordinates: simplifyLine(part.coordinates, { toleranceM: 8, maxPoints: 800 }),
+  }));
   return {
     ...data,
     segments: data.segments.map((s) =>
@@ -238,6 +249,7 @@ export function applyRoute(
             geometry: { type: "LineString" as const, coordinates: geometry },
             distanceM: result.distanceM,
             durationMin: result.durationMin,
+            parts,
           }
         : s,
     ),
@@ -285,7 +297,7 @@ export function completeFreehand(
   points: Position[],
   mode: Mode,
 ): OpsResult {
-  if (points.length < 2) return { data, needed: [] };
+  if (points.length < 2) return result(data, data, []);
   const geometry = simplifyLine(points, { toleranceM: 8, maxPoints: 2000 });
   const first = geometry[0];
   const last = geometry[geometry.length - 1];
@@ -330,10 +342,11 @@ export function completeFreehand(
     distanceM: roughDistanceM(first, last),
     durationMin: 0,
   };
-  return {
-    data: { ...data, stops: [...data.stops, ...newStops], segments: [...data.segments, seg] },
-    needed: [],
-  };
+  return result(data, {
+    ...data,
+    stops: [...data.stops, ...newStops],
+    segments: [...data.segments, seg],
+  }, []);
 }
 
 export function updateSegmentVertex(
@@ -367,29 +380,50 @@ export function simplifyVertices(coords: Position[], maxPoints: number): Positio
 
 export function addDay(data: TripData): OpsResult {
   const day: TripDay = { id: nanoid(10), name: `第 ${data.days.length + 1} 天` };
-  return { data: { ...data, days: [...data.days, day] }, needed: [] };
+  return result(data, { ...data, days: [...data.days, day] }, []);
+}
+
+/** 重命名天；空名称重置为 null（UI fallback 回「第 N 天」）。 */
+export function renameDay(data: TripData, dayId: string, name: string): OpsResult {
+  const target = data.days.find((d) => d.id === dayId);
+  if (!target) return result(data, data, []);
+  const trimmed = name.trim().slice(0, 50) || undefined;
+  if (target.name === trimmed) return result(data, data, []);
+  return result(data, {
+    ...data,
+    days: data.days.map((d) => (d.id === dayId ? { ...d, name: trimmed } : d)),
+  }, []);
+}
+
+/** 天顺序重排（纯展示顺序，不改任何站点的 dayId/order）。 */
+export function reorderDays(data: TripData, fromIdx: number, toIdx: number): OpsResult {
+  const days = data.days;
+  if (fromIdx === toIdx || days.length < 2 || fromIdx < 0 || fromIdx >= days.length || toIdx < 0 || toIdx >= days.length) {
+    return result(data, data, []);
+  }
+  const reordered = [...days];
+  const [moved] = reordered.splice(fromIdx, 1);
+  reordered.splice(toIdx, 0, moved);
+  return result(data, { ...data, days: reordered }, []);
 }
 
 export function removeDay(data: TripData, dayId: string): OpsResult {
-  if (data.days.length <= 1) return { data, needed: [] };
+  if (data.days.length <= 1) return result(data, data, []);
   const dayStopIds = new Set(data.stops.filter((s) => s.dayId === dayId).map((s) => s.id));
-  return {
-    data: {
-      ...data,
-      days: data.days.filter((d) => d.id !== dayId),
-      stops: data.stops.filter((s) => s.dayId !== dayId),
-      segments: data.segments.filter(
-        (s) => !dayStopIds.has(s.fromStop) && !dayStopIds.has(s.toStop),
-      ),
-    },
-    needed: [],
-  };
+  return result(data, {
+    ...data,
+    days: data.days.filter((d) => d.id !== dayId),
+    stops: data.stops.filter((s) => s.dayId !== dayId),
+    segments: data.segments.filter(
+      (s) => !dayStopIds.has(s.fromStop) && !dayStopIds.has(s.toStop),
+    ),
+  }, []);
 }
 
 export function moveStopToDay(data: TripData, stopId: string, dayId: string): OpsResult {
   const stop = data.stops.find((s) => s.id === stopId);
   const day = data.days.find((d) => d.id === dayId);
-  if (!stop || !day || stop.dayId === dayId) return { data, needed: [] };
+  if (!stop || !day || stop.dayId === dayId) return result(data, data, []);
   const targetCount = data.stops.filter((s) => s.dayId === dayId).length;
 
   const stops = data.stops.map((s) => {
@@ -434,7 +468,7 @@ export function moveStopToDay(data: TripData, stopId: string, dayId: string): Op
     needed.push(segmentRequest(seg));
   }
 
-  return { data: { ...data, stops, segments }, needed };
+  return result(data, { ...data, stops, segments }, needed);
 }
 
 export function updateStop(

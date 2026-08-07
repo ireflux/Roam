@@ -20,7 +20,8 @@ export function useFreehandDraw(map: AmapMap | null, active: boolean, onCommit: 
       lineRef.current = null;
       return;
     }
-    map.setStatus({ dragEnable: false });
+    // 拖拽禁用/启用由 MapLayers 依据 tool 单点控制（dragEnable: tool !== "draw"），
+    // 此处不再触碰地图状态，避免恢复时序问题。
     const position = (event: { lnglat: { getLng(): number; getLat(): number } }): Position => [event.lnglat.getLng(), event.lnglat.getLat()];
     const onDown = (event: { lnglat: { getLng(): number; getLat(): number }; originalEvent?: MouseEvent }) => {
       if (event.originalEvent?.button !== undefined && event.originalEvent.button !== 0) return;
@@ -48,7 +49,6 @@ export function useFreehandDraw(map: AmapMap | null, active: boolean, onCommit: 
     map.on("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => {
-      map.setStatus({ dragEnable: true });
       map.off("mousedown", onDown);
       map.off("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
