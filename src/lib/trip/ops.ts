@@ -35,9 +35,38 @@ function result(prev: TripData, data: TripData, needed: SegmentRequest[]): OpsRe
   return { data, needed, changed: data !== prev };
 }
 
+/**
+ * 稳定自动名：取现有「第 N 天」的最大 N + 1。删除/重排不会让新天与已有天重名，
+ * 且名字一旦生成就存下来，显示不依赖数组下标。
+ */
+export function autoDayName(days: TripDay[]): string {
+  let max = 0;
+  for (const d of days) {
+    const m = d.name?.match(/^第\s*(\d+)\s*天$/);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `第 ${max + 1} 天`;
+}
+
+/** 补齐缺失的天名（旧数据兼容）：无名字的天按未占用的最小序号生成自动名。 */
+export function backfillDayNames(days: TripDay[]): TripDay[] {
+  const used = new Set<number>();
+  for (const d of days) {
+    const m = d.name?.match(/^第\s*(\d+)\s*天$/);
+    if (m) used.add(Number(m[1]));
+  }
+  return days.map((d) => {
+    if (d.name) return d;
+    let n = 1;
+    while (used.has(n)) n += 1;
+    used.add(n);
+    return { ...d, name: `第 ${n} 天` };
+  });
+}
+
 function ensureDay(data: TripData, dayId: string): TripData {
   if (data.days.some((d) => d.id === dayId)) return data;
-  const day: TripDay = { id: dayId, name: "第 1 天" };
+  const day: TripDay = { id: dayId, name: autoDayName(data.days) };
   return { ...data, days: [...data.days, day] };
 }
 
@@ -362,7 +391,8 @@ export function updateSegmentVertex(
       const coords = s.geometry.coordinates.map((c, i) =>
         i === vertexIndex ? position : c,
       );
-      return { ...s, geometry: { type: "LineString", coordinates: coords } };
+      // 手动改线后不再代表原始公交/地铁方案，清掉子段，避免渲染仍按旧 parts
+      return { ...s, geometry: { type: "LineString", coordinates: coords }, parts: undefined };
     }),
   };
 }
@@ -379,19 +409,23 @@ export function simplifyVertices(coords: Position[], maxPoints: number): Positio
 }
 
 export function addDay(data: TripData): OpsResult {
-  const day: TripDay = { id: nanoid(10), name: `第 ${data.days.length + 1} 天` };
+  const day: TripDay = { id: nanoid(10), name: autoDayName(data.days) };
   return result(data, { ...data, days: [...data.days, day] }, []);
 }
 
-/** 重命名天；空名称重置为 null（UI fallback 回「第 N 天」）。 */
+/**
+ * 重命名天；空名称回填自动名（不再重置为 undefined，确保天名永远稳定存储，
+ * 显示不依赖数组顺序）。
+ */
 export function renameDay(data: TripData, dayId: string, name: string): OpsResult {
   const target = data.days.find((d) => d.id === dayId);
   if (!target) return result(data, data, []);
-  const trimmed = name.trim().slice(0, 50) || undefined;
-  if (target.name === trimmed) return result(data, data, []);
+  const trimmed = name.trim().slice(0, 50);
+  const next = trimmed || autoDayName(data.days);
+  if (target.name === next) return result(data, data, []);
   return result(data, {
     ...data,
-    days: data.days.map((d) => (d.id === dayId ? { ...d, name: trimmed } : d)),
+    days: data.days.map((d) => (d.id === dayId ? { ...d, name: next } : d)),
   }, []);
 }
 

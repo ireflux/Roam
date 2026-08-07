@@ -8,6 +8,7 @@ import {
   addStop as opAddStop,
   applyFallbackLine,
   applyRoute,
+  backfillDayNames,
   completeFreehand as opCompleteFreehand,
   markSegmentSnapped,
   moveStopToDay as opMoveStopToDay,
@@ -179,8 +180,13 @@ export const useTripStore = create<TripState>((set, get) => ({
       clearSaveTimer();
       undoStack.length = 0;
       redoStack.length = 0;
+      const data =
+        trip.data.days.some((d) => !d.name)
+          ? { ...trip.data, days: backfillDayNames(trip.data.days) }
+          : trip.data;
+      const hydrated = data !== trip.data ? { ...trip, data } : trip;
       set({
-        trip,
+        trip: hydrated,
         status: "idle",
         segState: {},
         selectedStopId: null,
@@ -216,7 +222,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       const newStopId = res.data.stops.find(
         (s) => s.dayId === dayId && s.lat === input.lat && s.lng === input.lng,
       )?.id;
-      set({ trip: { ...trip, data: res.data }, tool: "select" });
+      set({ trip: { ...trip, data: res.data } });
       scheduleSave(get);
       if (res.needed.length > 0) get().runNeeded(res.needed);
       return newStopId;
@@ -354,7 +360,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       if (!trip) return;
       pushHistory(trip.data);
       const res = opCompleteFreehand(trip.data, points, mode);
-      set({ trip: { ...trip, data: res.data }, tool: "select" });
+      set({ trip: { ...trip, data: res.data } });
       scheduleSave(get);
     },
 

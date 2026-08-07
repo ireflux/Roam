@@ -392,6 +392,19 @@ describe("updateSegmentVertex / markSegmentSnapped", () => {
     const snapped = markSegmentSnapped(moved, seg.id);
     expect(snapped.segments[0].kind).toBe("snapped");
   });
+
+  it("改线后清除公交/地铁 parts，避免渲染仍按旧子段", () => {
+    const a = stop("a", 0);
+    const b = stop("b", 1);
+    const seg: TripSegment = {
+      ...autoSegment(a, b, "transit"),
+      geometry: { type: "LineString" as const, coordinates: [[0, 0], [0.5, 0.5], [1, 1]] as [number, number][] },
+      parts: [{ kind: "walking", coordinates: [[0, 0], [0.5, 0.5]] as [number, number][] }, { kind: "transit", coordinates: [[0.5, 0.5], [1, 1]] as [number, number][] }],
+    };
+    const data: TripData = { days: [{ id: DAY, name: "d" }], stops: [a, b], segments: [seg] };
+    const moved = updateSegmentVertex(data, seg.id, 1, [0.6, 0.4]);
+    expect(moved.segments[0].parts).toBeUndefined();
+  });
 });
 
 describe("simplifyVertices", () => {
@@ -459,11 +472,24 @@ describe("renameDay", () => {
     expect(r.data.days[0].name).toBe("上海 Day 1");
   });
 
-  it("空名称重置为 undefined（fallback 自动命名）", () => {
+  it("空名称回填自动名（不再依赖数组下标）", () => {
     const data: TripData = { days: [{ id: DAY, name: "自定义" }], stops: [], segments: [] };
     const r = renameDay(data, DAY, "   ");
     expect(r.changed).toBe(true);
-    expect(r.data.days[0].name).toBeUndefined();
+    expect(r.data.days[0].name).toBe("第 1 天");
+  });
+
+  it("重排天不会改变名称", () => {
+    const data: TripData = {
+      days: [
+        { id: "d1", name: "第 1 天" },
+        { id: "d2", name: "第 2 天" },
+      ],
+      stops: [],
+      segments: [],
+    };
+    const r = reorderDays(data, 1, 0);
+    expect(r.data.days.map((d) => d.name)).toEqual(["第 2 天", "第 1 天"]);
   });
 
   it("同名或不存在是 no-op", () => {

@@ -9,7 +9,8 @@ import { updateSegmentLinePath } from "@/lib/mapOverlays";
 const MAX_VERTICES = 24;
 
 /**
- * 编辑自由线/吸附线顶点。AMap 的轨迹纠偏 API 需要完整 GPS 轨迹，
+ * 改线工具：为选中线段绘制可拖拽顶点（自由线、自动路线、已改线段均可；公交/地铁段改线后降级为普通线）。
+ * AMap 的轨迹纠偏 API 需要完整 GPS 轨迹，
  * 所以单个顶点仍由用户手动拖拽。
  * 拖拽过程中只指令式更新该段 Polyline（不写 store），
  * dragend 才提交到 store，避免每帧整图重建导致被拖 marker 销毁。
@@ -28,7 +29,7 @@ export function useVertexSnap(
   }, [onMove]);
 
   const activeSeg: TripSegment | null =
-    active ? data.segments.find((segment) => segment.id === selectedSegId && segment.kind !== "auto") ?? null : null;
+    active ? data.segments.find((segment) => segment.id === selectedSegId) ?? null : null;
 
   useEffect(() => {
     if (!map || !window.AMap) return;
