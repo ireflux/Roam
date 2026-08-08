@@ -37,7 +37,7 @@ async function drawerHeight(page: Page) {
 test.describe("编辑器冒烟", () => {
   test("桌面端：加载后侧栏、工具行与地图可见", async ({ page }) => {
     await gotoEditor(page);
-    await expect(page.getByPlaceholder("路线标题")).toBeVisible();
+    await expect(page.getByTestId("trip-title-button")).toBeVisible();
     await expect(page.getByTitle("实时路况")).toBeVisible();
     await expect(page.getByPlaceholder(/搜索地点/)).toBeVisible();
   });
@@ -86,7 +86,9 @@ test.describe("编辑器冒烟", () => {
 
   test("保存：改标题后自动保存并持久化", async ({ page }) => {
     const id = await gotoEditor(page);
-    await page.getByPlaceholder("路线标题").fill("冒烟测试-改名");
+    await page.getByTestId("trip-title-button").click();
+    await page.getByTestId("trip-title-input").fill("冒烟测试-改名");
+    await page.getByTestId("trip-title-input").press("Enter");
     await expect(page.getByText(/待保存|dirty|saving/)).toBeVisible();
     await expect(page.getByText(/已保存|saved/)).toBeVisible({ timeout: 20_000 });
     await expect
@@ -94,5 +96,21 @@ test.describe("编辑器冒烟", () => {
         timeout: 20_000,
       })
       .toContain("冒烟测试-改名");
+  });
+
+  test("桌面端：天数标签上的 ✕ 可删除指定天", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.includes("mobile"), "仅桌面端");
+    await gotoEditor(page);
+    await page.getByTitle("添加一天").first().click();
+    await page.getByTitle("添加一天").first().click();
+    await page.getByTitle("添加一天").first().click();
+    await expect(page.getByText("第 3 天")).toBeVisible();
+    await page.getByLabel("删除 第 2 天").click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByRole("dialog")).toContainText("第 2 天");
+    await page.getByRole("button", { name: "删除", exact: true }).click();
+    await expect(page.getByText("第 2 天")).toHaveCount(0);
+    await expect(page.getByText("第 3 天")).toHaveCount(1);
+    await expect(page.getByText("第 1 天")).toHaveCount(1);
   });
 });

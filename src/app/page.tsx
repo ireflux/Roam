@@ -3,11 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { Trip } from "@/lib/types";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 export default function Home() {
   const router = useRouter();
   const [recent, setRecent] = useState<Trip[]>([]);
   const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<Trip | null>(null);
   const [nickname, setNickname] = useState<string | null>(null);
   const [editingNickname, setEditingNickname] = useState(false);
   const [nicknameDraft, setNicknameDraft] = useState("");
@@ -44,7 +46,6 @@ export default function Home() {
   }
 
   async function deleteTrip(id: string) {
-    if (!window.confirm("确定永久删除这条路线？此操作不可恢复。")) return;
     const res = await fetch(`/api/trips/${id}`, { method: "DELETE" });
     if (!res.ok) {
       alert("删除失败，请重试");
@@ -148,7 +149,7 @@ export default function Home() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        void deleteTrip(t.id);
+                        setDeleting(t);
                       }}
                       title="删除这条路线"
                       className="rounded-full p-2 text-zinc-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-950"
@@ -166,6 +167,18 @@ export default function Home() {
           </ul>
         </section>
       )}
+
+      <ConfirmDialog
+        open={deleting !== null}
+        title="删除这条路线？"
+        message={`确定永久删除「${deleting?.title || "未命名路线"}」？此操作不可恢复。`}
+        onConfirm={() => {
+          const id = deleting?.id;
+          setDeleting(null);
+          if (id) void deleteTrip(id);
+        }}
+        onCancel={() => setDeleting(null)}
+      />
     </main>
   );
 }

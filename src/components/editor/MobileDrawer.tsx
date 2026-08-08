@@ -12,7 +12,7 @@ interface MobileDrawerProps {
   activeDayId: string | null;
   onDayChange: (dayId: string) => void;
   onLocateStop: (stop: TripStop) => void;
-  onStopDeleted?: () => void;
+  onStopDeleted?: (stop: TripStop) => void;
 }
 
 const ROUNDED = "rounded-t-2xl";

@@ -68,6 +68,8 @@ interface TripState {
   updateStop: (stopId: string, patch: { name?: string; note?: string; category?: string }) => void;
   undo: () => void;
   redo: () => void;
+  /** 撤销最近一次「删除停留点」（toast 上的撤销按钮）。无待撤销删除或期间发生其他修改时返回 false。 */
+  undoDelete: () => boolean;
 
   save: () => Promise<void>;
 }
@@ -78,6 +80,14 @@ const ROUTE_CONCURRENCY = 3;
 
 const undoStack: TripData[] = [];
 const redoStack: TripData[] = [];
+
+/**
+ * 最近一次「删除停留点」的撤销上下文（toast 撤销专用，独立于全局 undo 栈）：
+ * - snapshot：删除前的数据引用（ops 全程不可变，引用即快照，O(1)）；
+ * - mark：删除时注册撤销栈的水位。撤销前校验栈水位未变 + 重做栈为空，
+ *   避免撤销窗口内用户的其他操作被误回退。
+ */
+let pendingDelete: { snapshot: TripData; mark: number } | null = null;
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let saveInFlight = false;
@@ -253,8 +263,11 @@ export const useTripStore = create<TripState>((set, get) => ({
     removeStop: (stopId) => {
       const { trip } = get();
       if (!trip) return;
-      pushHistory(trip.data);
-      const res = opRemoveStop(trip.data, stopId);
+      const snapshot = trip.data;
+      pushHistory(snapshot);
+      const res = opRemoveStop(snapshot, stopId);
+      if (!res.changed) return;
+      pendingDelete = { snapshot, mark: undoStack.length };
       set({ trip: { ...trip, data: res.data }, selectedStopId: null });
       scheduleSave(get);
       if (res.needed.length > 0) get().runNeeded(res.needed);
@@ -458,6 +471,22 @@ export const useTripStore = create<TripState>((set, get) => ({
       set({ trip: { ...trip, data: next } });
       syncHistoryFlags();
       scheduleSave(get);
+    },
+
+    undoDelete: () => {
+      if (!pendingDelete) return false;
+      const { snapshot, mark } = pendingDelete;
+      pendingDelete = null;
+      const { trip } = get();
+      if (!trip) return false;
+      // 撤销窗口内若已发生其他用户操作（撤销栈水位变化或重做栈非空），
+      // 拒绝恢复快照，避免覆盖新改动。
+      if (undoStack.length !== mark || redoStack.length !== 0) return false;
+      undoStack.pop();
+      set({ trip: { ...trip, data: snapshot }, selectedStopId: null });
+      syncHistoryFlags();
+      scheduleSave(get);
+      return true;
     },
 
     save: () => flushSave(get),

@@ -5,6 +5,7 @@ import type { TripData, TripStop } from "@/lib/types";
 import { useTripStore } from "@/lib/useTripStore";
 import { useDayWeather, WeatherBadge } from "@/components/weather/useDayWeather";
 import { useTouchReorder } from "@/hooks/useTouchReorder";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 interface TripSidebarContentProps {
   data: TripData;
@@ -15,8 +16,8 @@ interface TripSidebarContentProps {
   /** 移动端：开启长按拖拽排序 + 点击卡片定位地图 */
   mobile?: boolean;
   onLocateStop?: (stop: TripStop) => void;
-  /** 删除某个停留点后触发（用于「路线自动重连」反馈）。 */
-  onStopDeleted?: () => void;
+  /** 删除某个停留点后触发（用于「撤销」toast 反馈）。 */
+  onStopDeleted?: (stop: TripStop) => void;
 }
 
 /**
@@ -68,38 +69,98 @@ export default function TripSidebarContent({
 
 function TripTitle() {
   const trip = useTripStore((s) => s.trip);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const startEdit = () => {
+    setDraft(trip?.title ?? "");
+    setEditing(true);
+  };
+  const commit = () => {
+    const next = draft.trim();
+    if (next && next !== trip?.title) useTripStore.getState().setTitle(next);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        data-testid="trip-title-input"
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) => e.target.select()}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        placeholder="路线标题"
+        aria-label="路线标题"
+        maxLength={100}
+        className="w-full flex-1 bg-transparent text-lg font-semibold outline-none placeholder:text-zinc-400 dark:text-zinc-100"
+      />
+    );
+  }
+
   return (
-    <input
-      value={trip?.title ?? ""}
-      onChange={(e) => useTripStore.getState().setTitle(e.target.value)}
-      placeholder="路线标题"
-      aria-label="路线标题"
-      className="w-full flex-1 bg-transparent text-lg font-semibold outline-none placeholder:text-zinc-400 dark:text-zinc-100"
-    />
+    <button
+      data-testid="trip-title-button"
+      onClick={startEdit}
+      title="点击编辑标题"
+      className="group flex w-full flex-1 items-baseline gap-1 bg-transparent text-left text-lg font-semibold text-zinc-900 outline-none hover:underline underline-offset-4 dark:text-zinc-100"
+    >
+      <span className={trip?.title?.trim() ? "" : "text-zinc-400 dark:text-zinc-500"}>
+        {trip?.title?.trim() || "路线标题"}
+      </span>
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        className="shrink-0 text-zinc-300 opacity-0 transition group-hover:opacity-100 dark:text-zinc-600"
+        aria-hidden
+      >
+        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+      </svg>
+    </button>
   );
 }
 
 function DeleteTripButton() {
   const trip = useTripStore((s) => s.trip);
+  const [open, setOpen] = useState(false);
   const del = () => {
-    if (!window.confirm("确定永久删除这条路线？此操作不可恢复。")) return;
+    setOpen(false);
     void fetch(`/api/trips/${trip?.id}`, { method: "DELETE" }).then((r) => {
       if (r.ok) window.location.href = "/";
       else alert("删除失败，请重试");
     });
   };
   return (
-    <button
-      onClick={del}
-      title="删除这条路线"
-      className="shrink-0 rounded-full p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-        <path d="M3 6h18" />
-        <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
-        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-      </svg>
-    </button>
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        title="删除这条路线"
+        className="shrink-0 rounded-full p-2 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M3 6h18" />
+          <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+        </svg>
+      </button>
+      <ConfirmDialog
+        open={open}
+        title="删除这条路线？"
+        message={`确定永久删除「${trip?.title || "未命名路线"}」？此操作不可恢复。`}
+        onConfirm={del}
+        onCancel={() => setOpen(false)}
+      />
+    </>
   );
 }
 
@@ -117,10 +178,13 @@ function DayTabs({
   mobile: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const reorder = useTouchReorder(data.days, (from, to) => useTripStore.getState().reorderDays(from, to));
+  const pendingDay = data.days.find((d) => d.id === pendingDeleteId);
+  const pendingDayStopCount = data.stops.filter((s) => s.dayId === pendingDeleteId).length;
 
   const tabClass = (active: boolean) =>
-    `rounded-full px-3 py-1.5 text-sm ${
+    `flex items-center rounded-full px-3 py-1.5 text-sm ${
       active
         ? "bg-emerald-600 text-white"
         : "border border-zinc-200 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
@@ -141,11 +205,19 @@ function DayTabs({
         editingId === d.id ? (
           <DayNameEditor key={d.id} dayId={d.id} fallback={`第 ${i + 1} 天`} onDone={() => setEditingId(null)} />
         ) : (
-          <button
+          <div
             key={d.id}
+            role="button"
+            tabIndex={0}
             data-reorder-index={i}
             onClick={() => onDayChange(d.id)}
             onDoubleClick={() => setEditingId(d.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onDayChange(d.id);
+              }
+            }}
             {...(mobile ? { onPointerDown: (e: React.PointerEvent<HTMLElement>) => reorder.onPointerDown(e, i) } : {})}
             draggable={!mobile}
             onDragStart={!mobile ? (e) => e.dataTransfer.setData("text/plain", String(i)) : undefined}
@@ -159,11 +231,30 @@ function DayTabs({
                 : undefined
             }
             title={mobile ? "长按排序 · 双击改名" : "双击改名 · 拖拽排序"}
-            className={tabClass(d.id === dayId)}
+            className={`${tabClass(d.id === dayId)} ${mobile ? "" : "outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"}`}
           >
             {d.name ?? `第 ${i + 1} 天`}
             <span className="ml-1 text-xs opacity-70">{data.stops.filter((s) => s.dayId === d.id).length}</span>
-          </button>
+            {data.days.length > 1 && (
+              <button
+                aria-label={`删除 ${d.name ?? `第 ${i + 1} 天`}`}
+                title="删除这一天"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPendingDeleteId(d.id);
+                }}
+                onDoubleClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                className={`ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] leading-none ${
+                  d.id === dayId
+                    ? "text-white/70 hover:bg-white/20 hover:text-white"
+                    : "text-zinc-300 hover:bg-red-50 hover:text-red-500 dark:text-zinc-600 dark:hover:bg-red-950 dark:hover:text-red-400"
+                }`}
+              >
+                ✕
+              </button>
+            )}
+          </div>
         ),
       )}
       <button
@@ -173,15 +264,23 @@ function DayTabs({
       >
         + 天
       </button>
-      {data.days.length > 1 && (
-        <button
-          onClick={() => useTripStore.getState().removeDay(dayId)}
-          title="删除当天"
-          className="rounded-full border border-zinc-200 px-3 py-1.5 text-sm text-zinc-400 hover:border-red-400 hover:text-red-500 dark:border-zinc-800"
-        >
-          删除
-        </button>
-      )}
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        title={`删除「${pendingDay?.name ?? "这一天"}」？`}
+        message={`该天的 ${pendingDayStopCount} 个地点及路线会一并移除，可稍后用撤销恢复。`}
+        onConfirm={() => {
+          const deleted = pendingDeleteId;
+          if (!deleted) return;
+          useTripStore.getState().removeDay(deleted);
+          if (dayId === deleted) {
+            const idx = data.days.findIndex((d) => d.id === deleted);
+            const next = data.days[idx + 1] ?? data.days[idx - 1];
+            onDayChange(next?.id ?? "");
+          }
+          setPendingDeleteId(null);
+        }}
+        onCancel={() => setPendingDeleteId(null)}
+      />
     </div>
   );
 }
@@ -231,7 +330,7 @@ function StopList({
   dayId: string;
   mobile: boolean;
   onLocateStop?: (stop: TripStop) => void;
-  onStopDeleted?: () => void;
+  onStopDeleted?: (stop: TripStop) => void;
 }) {
   const listRef = useRef<HTMLUListElement | null>(null);
   const reorder = useTouchReorder(stops, (from, to) => useTripStore.getState().reorder(dayId, from, to), listRef);
@@ -297,7 +396,7 @@ function StopCard({
   dragDelta?: number;
   onHandlePointerDown?: (e: React.PointerEvent<HTMLElement>) => void;
   onLocateStop?: (stop: TripStop) => void;
-  onStopDeleted?: () => void;
+  onStopDeleted?: (stop: TripStop) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(stop.name);
@@ -412,10 +511,8 @@ function StopCard({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (window.confirm(`删除地点「${stop.name || "未命名地点"}」？`)) {
-                useTripStore.getState().removeStop(stop.id);
-                onStopDeleted?.();
-              }
+              useTripStore.getState().removeStop(stop.id);
+              onStopDeleted?.(stop);
             }}
             title="删除"
             className="shrink-0 rounded-full px-2 py-1 text-xs text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"

@@ -39,7 +39,7 @@ export default function Editor({ trip }: { trip: Trip }) {
   const [activeDayId, setActiveDayId] = useState<string | null>(null);
   const [trafficOn, setTrafficOn] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
-  const [toast, setToast] = useState<{ key: number; text: string } | null>(null);
+  const [toast, setToast] = useState<{ key: number; text: string; action?: { label: string; onActivate: () => void } } | null>(null);
   const mobile = useIsMobile();
   const onboarding = useOnboarding();
 
@@ -90,6 +90,19 @@ export default function Editor({ trip }: { trip: Trip }) {
     [map],
   );
 
+  const onStopDeleted = useCallback((stop: TripStop) => {
+    setToast({
+      key: Date.now(),
+      text: `已删除「${stop.name || "未命名地点"}」`,
+      action: {
+        label: "撤销",
+        onActivate: () => {
+          if (useTripStore.getState().undoDelete()) setToast(null);
+        },
+      },
+    });
+  }, []);
+
   return (
     <div className="h-screen w-full overflow-hidden">
       <div className="relative h-full w-full">
@@ -114,9 +127,10 @@ export default function Editor({ trip }: { trip: Trip }) {
         {busyTool && (
           <LockChip
             locked={dragLocked}
+            floatingLeft={!mobile}
             onToggle={() => setMapUnlocked(mapUnlocked ? false : true)}
             tool={tool}
-            top={mobile ? 118 : 56}
+            top={mobile ? 118 : 64}
           />
         )}
 
@@ -163,7 +177,7 @@ export default function Editor({ trip }: { trip: Trip }) {
             activeDayId={dayId}
             onDayChange={setActiveDayId}
             onLocateStop={locateStop}
-            onStopDeleted={() => setToast({ key: Date.now(), text: "已删除，路线自动重连" })}
+            onStopDeleted={onStopDeleted}
           />
         ) : (
           <aside className="absolute inset-y-0 right-0 z-10 w-full max-w-sm border-l border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
@@ -171,7 +185,7 @@ export default function Editor({ trip }: { trip: Trip }) {
               data={data}
               activeDayId={dayId}
               onDayChange={setActiveDayId}
-              onStopDeleted={() => setToast({ key: Date.now(), text: "已删除，路线自动重连" })}
+              onStopDeleted={onStopDeleted}
             />
           </aside>
         )}
@@ -182,7 +196,14 @@ export default function Editor({ trip }: { trip: Trip }) {
             className="pointer-events-none absolute inset-x-0 z-30"
             style={{ bottom: mobile ? "calc(42vh + 16px)" : 16, top: "auto" }}
           >
-            <TipBanner key={toast.key} text={toast.text} onClose={() => setToast(null)} />
+            <TipBanner
+              key={toast.key}
+              text={toast.text}
+              actionText={toast.action?.label}
+              onAction={toast.action ? () => toast.action!.onActivate() : undefined}
+              autoHideMs={5000}
+              onClose={() => setToast(null)}
+            />
           </div>
         )}
 
@@ -278,7 +299,7 @@ function Toolbar({ trip, status, mobile, trafficOn, onTrafficToggle, failedSegs,
   }
 
   return (
-    <div className="absolute left-3 right-3 top-3 z-20 flex flex-wrap items-center gap-2 sm:left-4 sm:top-4">
+    <div className="absolute left-3 right-3 top-3 z-20 flex flex-wrap items-center gap-2 sm:left-4 sm:top-4 sm:right-[400px]">
       <IconButton onClick={onBack} label="返回">←</IconButton>
       <div className="flex overflow-hidden rounded-full bg-white shadow dark:bg-zinc-900">
         {TOOLS.map((t) => (
@@ -431,12 +452,14 @@ function FailedBadge({ count, segs }: { count: number; segs: { id: string; fromS
   );
 }
 
-function LockChip({ locked, onToggle, tool, top }: { locked: boolean; onToggle: () => void; tool: Tool; top: number }) {
+function LockChip({ locked, floatingLeft, onToggle, tool, top }: { locked: boolean; floatingLeft?: boolean; onToggle: () => void; tool: Tool; top: number }) {
   return (
     <button
       onClick={onToggle}
       title={locked ? "地图已锁定：单指用于绘制/改线，双指缩放；点击解锁平移" : "地图平移已解锁，点击重新锁定"}
-      className={`absolute right-3 z-30 flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-medium shadow dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200`}
+      className={`absolute z-30 flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-medium shadow dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 ${
+        floatingLeft ? "left-3" : "right-3"
+      }`}
       style={{ top }}
     >
       {locked ? "🔒 已锁定" : "🔓 已解锁"}
