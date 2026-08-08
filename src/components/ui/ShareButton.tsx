@@ -7,10 +7,10 @@ import type { Trip } from "@/lib/types";
 export default function ShareButton({ trip, variant = "solid" }: { trip: Trip; variant?: "solid" | "ghost" }) {
   const [copied, setCopied] = useState(false);
 
-  const shareUrl = `${window.location.origin}/t/${trip.shareId}`;
-
   const share = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    // window 只能在点击时访问（SSR 渲染阶段不可用）
+    const shareUrl = `${window.location.origin}/t/${trip.shareId}`;
     const nav = navigator as Navigator & { share?: (data: { url: string; title?: string }) => Promise<void> };
     if (nav.share) {
       try {
