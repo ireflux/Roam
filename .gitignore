@@ -46,3 +46,7 @@ next-env.d.ts
 opencode.json
 .superpowers/
 
+
+# Playwright
+test-results/
+playwright-report/
