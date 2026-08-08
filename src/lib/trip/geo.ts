@@ -74,6 +74,15 @@ export function simplifyLine(
   return out.map(([lng, lat]) => [Math.round(lng * 1e6) / 1e6, Math.round(lat * 1e6) / 1e6]);
 }
 
+/** 折线总路径长度（逐段球面距离求和），单位米。 */
+export function pathLengthM(points: Position[]): number {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    total += roughDistanceM(points[i - 1], points[i]);
+  }
+  return total;
+}
+
 /** 均匀采样到不超过 maxPoints 个点（保留首尾）。 */
 export function uniformSample(coords: Position[], maxPoints: number): Position[] {
   if (coords.length <= maxPoints) return [...coords];

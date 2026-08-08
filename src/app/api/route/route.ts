@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     to?: unknown;
   };
   const mode = body.mode;
-  if (mode !== "driving" && mode !== "walking" && mode !== "cycling") {
+  if (mode !== "driving" && mode !== "walking" && mode !== "cycling" && mode !== "transit") {
     return NextResponse.json({ error: "bad_request", message: "mode 无效" }, { status: 400 });
   }
   const from = parsePosition(body.from);

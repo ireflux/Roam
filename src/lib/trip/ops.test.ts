@@ -13,6 +13,7 @@ import {
   renameDay,
   reorderDays,
   reorderStops,
+  repairSegmentIds,
   segmentRequest,
   setSegmentMode,
   simplifyVertices,
@@ -44,10 +45,15 @@ describe("addStop", () => {
     const r = addStop(data, { dayId: DAY, name: "B", lat: 2, lng: 2, mode: "driving" });
     expect(r.data.segments).toHaveLength(1);
     expect(r.needed).toHaveLength(1);
-    expect(r.needed[0].segId).toBe(`${r.data.stops[0].id}->${r.data.stops[1].id}`);
+    expect(r.needed[0].segId).toBe(r.data.segments[0].id);
     expect(r.needed[0].from).toEqual([1, 1]);
     expect(r.needed[0].to).toEqual([2, 2]);
     expect(r.data.segments[0].kind).toBe("auto");
+  });
+
+  it("addedId 直接返回新增站点 id（不依赖坐标反查）", () => {
+    const r = addStop(emptyData(), { dayId: DAY, name: "A", lat: 1, lng: 1, mode: "driving" });
+    expect(r.addedId).toBe(r.data.stops[0].id);
   });
 
   it("保证 day 存在", () => {
@@ -173,7 +179,30 @@ describe("reorderStops", () => {
     const kept = r.data.segments.find((s) => s.fromStop === "b" && s.toStop === "c")!;
     expect(kept.kind).toBe("freehand");
     expect(kept.geometry.coordinates).toHaveLength(3);
-    expect(r.needed.some((n) => n.segId === `${b.id}->${c.id}`)).toBe(false);
+    expect(r.needed.some((n) => n.segId === kept.id)).toBe(false);
+  });
+});
+
+describe("段 id 唯一性", () => {
+  it("同一有序点对出现在不同天时自动段 id 不碰撞", () => {
+    const a = stop("a", 0);
+    const b = stop("b", 1);
+    const pairs: TripSegment[] = [autoSegment(a, b, "driving"), autoSegment(a, b, "cycling")];
+    expect(pairs[0].id).not.toBe(pairs[1].id);
+    expect(new Set(pairs.map((s) => s.id)).size).toBe(2);
+  });
+
+  it("repairSegmentIds 去重历史重复 id 并保留原引用当无重复", () => {
+    const a = stop("a", 0);
+    const b = stop("b", 1);
+    const dup1 = autoSegment(a, b, "driving");
+    const dup2 = { ...autoSegment(a, b, "walking"), id: dup1.id };
+    const data: TripData = { days: [{ id: DAY, name: "d" }], stops: [a, b], segments: [dup1, dup2] };
+    const repaired = repairSegmentIds(data);
+    expect(repaired.segments[0].id).not.toBe(repaired.segments[1].id);
+    expect(new Set(repaired.segments.map((s) => s.id)).size).toBe(2);
+    const clean: TripData = { ...data, segments: [dup1] };
+    expect(repairSegmentIds(clean)).toBe(clean);
   });
 });
 
@@ -186,7 +215,7 @@ describe("setSegmentMode", () => {
       stops: [a, b],
       segments: [autoSegment(a, b, "driving")],
     };
-    const r = setSegmentMode(data, `${a.id}->${b.id}`, "walking");
+    const r = setSegmentMode(data, data.segments[0].id, "walking");
     expect(r.data.segments[0].mode).toBe("walking");
     expect(r.needed).toHaveLength(1);
     expect(r.needed[0].mode).toBe("walking");
@@ -213,7 +242,7 @@ describe("applyRoute / applyFallbackLine", () => {
       stops: [a, b],
       segments: [autoSegment(a, b, "driving")],
     };
-    const segId = `${a.id}->${b.id}`;
+    const segId = data.segments[0].id;
     const next = applyRoute(data, segId, {
       geometry: [[1, 1], [1.5, 1.5], [2, 1]],
       distanceM: 500,
@@ -232,13 +261,33 @@ describe("applyRoute / applyFallbackLine", () => {
       stops: [a, b],
       segments: [autoSegment(a, b, "driving")],
     };
-    const segId = `${a.id}->${b.id}`;
+    const segId = data.segments[0].id;
     const next = applyFallbackLine(data, segId, {
       geometry: [[1, 1], [2, 2]],
       distanceM: 100,
       durationMin: 1,
     });
-    expect(next.segments[0].kind).toBe("freehand");
+    expect(next.segments[0].degraded).toBe(true);
+    expect(next.segments[0].kind).toBe("auto");
+  });
+
+  it("applyRoute 成功后清除降级标记", () => {
+    const a = stop("a", 0);
+    const b = stop("b", 1);
+    const data: TripData = {
+      days: [{ id: DAY, name: "d" }],
+      stops: [a, b],
+      segments: [autoSegment(a, b, "driving")],
+    };
+    const segId = data.segments[0].id;
+    const degraded = applyFallbackLine(data, segId, { geometry: [[1, 1], [2, 2]], distanceM: 100, durationMin: 1 });
+    expect(degraded.segments[0].degraded).toBe(true);
+    const routed = applyRoute(degraded, segId, {
+      geometry: [[1, 1], [1.5, 1.5], [2, 1]],
+      distanceM: 500,
+      durationMin: 10,
+    });
+    expect(routed.segments[0].degraded).toBe(false);
   });
 
   it("segmentRequest 提取端点", () => {
@@ -259,7 +308,7 @@ describe("applyRoute / applyFallbackLine", () => {
       stops: [a, b],
       segments: [autoSegment(a, b, "driving")],
     };
-    const segId = `${a.id}->${b.id}`;
+    const segId = data.segments[0].id;
     // 一条大圆弧：点很多但基本共线，简化后应显著减少
     const many: [number, number][] = Array.from({ length: 8_000 }, (_, i) => [i * 0.001, 0] as [number, number]);
     const next = applyRoute(data, segId, { geometry: many, distanceM: 1000, durationMin: 10 });
@@ -277,7 +326,7 @@ describe("applyRoute / applyFallbackLine", () => {
       stops: [a, b],
       segments: [autoSegment(a, b, "driving")],
     };
-    const segId = `${a.id}->${b.id}`;
+    const segId = data.segments[0].id;
     const next = applyRoute(data, segId, { geometry: [[1.0000004, 2.0000006], [3.0000009, 4.0000001]], distanceM: 500, durationMin: 5 });
     const [lng, lat] = next.segments[0].geometry.coordinates[0];
     expect(Math.round(lng * 1e6)).toBe(1000000);
@@ -337,6 +386,48 @@ describe("completeFreehand", () => {
     expect(coords.length).toBeLessThan(dense.length);
     expect(coords[0]).toEqual([0, 0]);
     expect(coords[coords.length - 1][0]).toBeCloseTo(0.4999, 3);
+  });
+
+  it("首尾吸附同一站点且路径足够长时允许环形段（from===to）", () => {
+    const a = stop("a", 0);
+    const data: TripData = {
+      days: [{ id: DAY, name: "d" }],
+      stops: [a],
+      segments: [],
+    };
+    // 以 a 为圆心绕一圈（约 1km 路径），首尾都落在 a 附近
+    const loop: [number, number][] = [
+      [a.lng, a.lat],
+      [a.lng + 0.002, a.lat + 0.001],
+      [a.lng + 0.004, a.lat],
+      [a.lng + 0.002, a.lat - 0.001],
+      [a.lng, a.lat],
+    ];
+    const r = completeFreehand(data, loop, "walking");
+    expect(r.changed).toBe(true);
+    expect(r.data.segments).toHaveLength(1);
+    expect(r.data.segments[0].fromStop).toBe("a");
+    expect(r.data.segments[0].toStop).toBe("a");
+    expect(r.data.segments[0].kind).toBe("freehand");
+  });
+
+  it("首尾吸附同一站点但路径过短时视为误触，忽略本次绘制", () => {
+    const a = stop("a", 0);
+    const data: TripData = {
+      days: [{ id: DAY, name: "d" }],
+      stops: [a],
+      segments: [],
+    };
+    // 仅在 a 附近小幅度抖动（路径 <200m）
+    const jitter: [number, number][] = [
+      [a.lng, a.lat],
+      [a.lng + 0.0003, a.lat + 0.0002],
+      [a.lng, a.lat],
+    ];
+    const r = completeFreehand(data, jitter, "walking");
+    expect(r.changed).toBe(false);
+    expect(r.data).toBe(data);
+    expect(r.data.segments).toHaveLength(0);
   });
 });
 

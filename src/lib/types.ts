@@ -35,6 +35,8 @@ export interface TripSegment {
   durationMin?: number;
   /** 公交/地铁段的可选子段（公交实线 + 步行虚线）；其余出行方式不设置。 */
   parts?: SegmentPart[];
+  /** 规划失败降级为直线的标记（持久化；与 kind 语义正交：kind 表示线来源，degraded 表示未按真实道路渲染）。 */
+  degraded?: boolean;
 }
 
 export interface TripDay {

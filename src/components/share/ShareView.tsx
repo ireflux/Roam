@@ -9,6 +9,7 @@ import { useDayWeather, WeatherBadge } from "@/components/weather/useDayWeather"
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 const COLOR: Record<Mode, string> = { driving: "#2563eb", walking: "#059669", cycling: "#ea580c", transit: "#0891b2" };
+const DEGRADED_COLOR = "#d97706";
 
 export default function ShareView({ trip, nickname }: { trip: PublicTrip; nickname?: string | null }) {
   const [map, setMap] = useState<AmapMap | null>(null);
@@ -35,10 +36,10 @@ function ShareLayers({ map, data, playing }: { map: AmapMap; data: TripData; pla
           : [{ kind: segment.mode as "transit" | "walking" | "driving" | "cycling", coordinates: segment.geometry.coordinates }];
         return parts.map((part) => new window.AMap!.Polyline({
           path: part.coordinates,
-          strokeColor: COLOR[segment.mode],
+          strokeColor: segment.degraded ? DEGRADED_COLOR : COLOR[segment.mode],
           strokeWeight: 4,
           strokeOpacity: 0.9,
-          strokeStyle: part.kind === "walking" ? "dashed" : undefined,
+          strokeStyle: segment.degraded || part.kind === "walking" ? "dashed" : undefined,
         }));
       }),
       ...data.stops.map((stop) => new window.AMap!.Marker({ position: [stop.lng, stop.lat], content: '<span style="display:block;width:16px;height:16px;border:2px solid #059669;border-radius:50%;background:white"></span>', anchor: "center" })),

@@ -75,16 +75,25 @@ export function useFreehandDraw(
       lineRef.current = null;
       if (points.length >= 2) onCommitRef.current(points);
     };
+    /** 系统中断（滚动/手势接管等）：丢弃本次绘制，不提交半成品线。 */
+    const abort = (e: PointerEvent) => {
+      if (e.pointerId !== pointerIdRef.current) return;
+      pointerIdRef.current = null;
+      drawingRef.current = false;
+      pointsRef.current = [];
+      lineRef.current?.setMap(null);
+      lineRef.current = null;
+    };
 
     container.addEventListener("pointerdown", onDown);
     container.addEventListener("pointermove", onMove);
     container.addEventListener("pointerup", finish);
-    container.addEventListener("pointercancel", finish);
+    container.addEventListener("pointercancel", abort);
     return () => {
       container.removeEventListener("pointerdown", onDown);
       container.removeEventListener("pointermove", onMove);
       container.removeEventListener("pointerup", finish);
-      container.removeEventListener("pointercancel", finish);
+      container.removeEventListener("pointercancel", abort);
       drawingRef.current = false;
       pointerIdRef.current = null;
       pointsRef.current = [];

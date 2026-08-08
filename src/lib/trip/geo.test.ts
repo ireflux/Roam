@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { roughDistanceM, simplifyLine, simplifyVertexIndices, uniformSample } from "@/lib/trip/geo";
+import { pathLengthM, roughDistanceM, simplifyLine, simplifyVertexIndices, uniformSample } from "@/lib/trip/geo";
 import type { Position } from "@/lib/types";
 
 describe("simplifyVertexIndices", () => {
@@ -50,5 +50,18 @@ describe("roughDistanceM", () => {
     const d = roughDistanceM([104.1954, 35.8617], [104.1954, 35.8717]);
     expect(d).toBeGreaterThan(1100);
     expect(d).toBeLessThan(1200);
+  });
+});
+
+describe("pathLengthM", () => {
+  it("逐段求和", () => {
+    const d = pathLengthM([[104.1954, 35.8617], [104.1954, 35.8717], [104.1954, 35.8817]]);
+    const one = roughDistanceM([104.1954, 35.8617], [104.1954, 35.8717]);
+    expect(d).toBeCloseTo(one * 2, 6);
+  });
+
+  it("空/单点返回 0", () => {
+    expect(pathLengthM([])).toBe(0);
+    expect(pathLengthM([[1, 2]])).toBe(0);
   });
 });

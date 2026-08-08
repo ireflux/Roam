@@ -17,6 +17,7 @@ import {
   renameDay as opRenameDay,
   reorderDays as opReorderDays,
   reorderStops as opReorderStops,
+  repairSegmentIds,
   segmentRequest,
   setSegmentMode as opSetSegmentMode,
   updateSegmentVertex,
@@ -194,10 +195,12 @@ export const useTripStore = create<TripState>((set, get) => ({
       clearSaveTimer();
       undoStack.length = 0;
       redoStack.length = 0;
-      const data =
-        trip.data.days.some((d) => !d.name)
-          ? { ...trip.data, days: backfillDayNames(trip.data.days) }
-          : trip.data;
+      // 旧数据兼容（见 ops.ts）：补齐天名 + 修复历史重复段 id
+      let data = trip.data;
+      if (data.days.some((d) => !d.name)) {
+        data = { ...data, days: backfillDayNames(data.days) };
+      }
+      data = repairSegmentIds(data);
       const hydrated = data !== trip.data ? { ...trip, data } : trip;
       set({
         trip: hydrated,
@@ -234,9 +237,9 @@ export const useTripStore = create<TripState>((set, get) => ({
       pushHistory(trip.data);
       const dayId = input.dayId ?? trip.data.days[0]?.id ?? "d1";
       const res = opAddStop(trip.data, { ...input, dayId });
-      const newStopId = res.data.stops.find(
-        (s) => s.dayId === dayId && s.lat === input.lat && s.lng === input.lng,
-      )?.id;
+      const newStopId =
+        res.addedId ??
+        res.data.stops.find((s) => s.dayId === dayId && s.lat === input.lat && s.lng === input.lng)?.id;
       set({ trip: { ...trip, data: res.data } });
       scheduleSave(get);
       if (res.needed.length > 0) get().runNeeded(res.needed);
@@ -298,6 +301,16 @@ export const useTripStore = create<TripState>((set, get) => ({
       const queue = [...needed];
       let active = 0;
 
+      /** 过期/失效请求的清理：清除 pending 状态，避免段永久卡在加载态。 */
+      const clearSegState = (segId: string) => {
+        set((s) => {
+          if (!(segId in s.segState)) return {};
+          const rest = { ...s.segState };
+          delete rest[segId];
+          return { segState: rest };
+        });
+      };
+
       const handle = async (req: SegmentRequest) => {
         const { trip } = get();
         if (!trip) return;
@@ -311,7 +324,10 @@ export const useTripStore = create<TripState>((set, get) => ({
           const json = (await res.json()) as
             | { geometry: Position[]; distanceM: number; durationMin: number; fallback?: boolean; parts?: SegmentPart[] }
             | { error: string; fallback?: { geometry: Position[]; distanceM: number; durationMin: number; parts?: SegmentPart[] } };
-          if (!isRequestCurrent(get, req)) return;
+          if (!isRequestCurrent(get, req)) {
+            clearSegState(req.segId);
+            return;
+          }
           const current = get().trip;
           if (!current) return;
           if ("error" in json && json.error) {
@@ -334,7 +350,10 @@ export const useTripStore = create<TripState>((set, get) => ({
             scheduleSave(get);
           }
         } catch {
-          if (!isRequestCurrent(get, req)) return;
+          if (!isRequestCurrent(get, req)) {
+            clearSegState(req.segId);
+            return;
+          }
           const current = get().trip;
           if (!current) return;
           const fb = {

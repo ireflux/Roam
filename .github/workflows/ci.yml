@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          # 构建无需真实凭据；避免默认值在 getRepo 等路径被意外启用
+          DATABASE_URL: ""
+          AMAP_WEB_SERVICE_KEY: ""
+          NEXT_PUBLIC_AMAP_JS_API_KEY: ""

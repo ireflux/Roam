@@ -43,9 +43,11 @@ npm run dev         # 开发
 npm run build       # 构建
 npm run start       # 运行生产构建
 npm run lint        # ESLint
+npm run typecheck   # tsc --noEmit
 npm test            # Vitest 单元测试
 npm run db:push     # 仅本地原型环境：同步 schema
 npm run db:migrate  # 应用已提交的 migration（Preview / Production）
+npm run db:generate # 依据 schema 变更生成新 migration
 ```
 
 ## 目录结构

@@ -47,6 +47,7 @@ export function isTripData(value: unknown): value is TripData {
       && typeof segment.toStop === "string"
       && (segment.mode === "driving" || segment.mode === "walking" || segment.mode === "cycling" || segment.mode === "transit")
       && (segment.kind === "auto" || segment.kind === "freehand" || segment.kind === "snapped")
+      && (segment.degraded === undefined || typeof segment.degraded === "boolean")
       && segment.geometry?.type === "LineString"
       && Array.isArray(segment.geometry.coordinates)
       && segment.geometry.coordinates.length >= 2

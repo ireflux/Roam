@@ -8,7 +8,7 @@ import type {
   TripSegment,
   TripStop,
 } from "@/lib/types";
-import { roughDistanceM, simplifyLine, uniformSample } from "@/lib/trip/geo";
+import { pathLengthM, roughDistanceM, simplifyLine, uniformSample } from "@/lib/trip/geo";
 
 /**
  * 不可变契约：本文件所有操作绝不原地修改 data，总是返回新对象/新数组
@@ -29,10 +29,12 @@ export interface OpsResult {
   needed: SegmentRequest[];
   /** 本次操作是否实际改变了 data（no-op 返回 false，且 data 与原引用相同）。 */
   changed: boolean;
+  /** 新增实体的 id（addStop 等操作），避免调用方靠坐标等启发式反查。 */
+  addedId?: string;
 }
 
-function result(prev: TripData, data: TripData, needed: SegmentRequest[]): OpsResult {
-  return { data, needed, changed: data !== prev };
+function result(prev: TripData, data: TripData, needed: SegmentRequest[], addedId?: string): OpsResult {
+  return { data, needed, changed: data !== prev, ...(addedId !== undefined ? { addedId } : {}) };
 }
 
 /**
@@ -80,9 +82,13 @@ function posOf(stop: TripStop): Position {
   return [stop.lng, stop.lat];
 }
 
+/**
+ * 自动段：id 用 nanoid 而非 `A->B` 拼接——同一有序点对出现在不同天时
+ * 拼接 id 会碰撞，导致 applyRoute/删除/渲染互相覆盖。
+ */
 export function autoSegment(prev: TripStop, next: TripStop, mode: Mode): TripSegment {
   return {
-    id: `${prev.id}->${next.id}`,
+    id: nanoid(10),
     fromStop: prev.id,
     toStop: next.id,
     mode,
@@ -124,16 +130,19 @@ export function addStop(
   };
   const needed: SegmentRequest[] = [];
   const prev = dayStops.at(-1);
+  let nextData: TripData;
   if (prev) {
     const seg = autoSegment(prev, stop, input.mode);
     needed.push(segmentRequest(seg));
-    return result(data, {
+    nextData = {
       ...withDay,
       stops: [...withDay.stops, stop],
       segments: [...withDay.segments, seg],
-    }, needed);
+    };
+  } else {
+    nextData = { ...withDay, stops: [...withDay.stops, stop] };
   }
-  return result(data, { ...withDay, stops: [...withDay.stops, stop] }, needed);
+  return result(data, nextData, needed, stop.id);
 }
 
 export function removeStop(data: TripData, stopId: string): OpsResult {
@@ -279,12 +288,15 @@ export function applyRoute(
             distanceM: result.distanceM,
             durationMin: result.durationMin,
             parts,
+            // 真实路线成功写入，清除降级标记
+            degraded: false,
           }
         : s,
     ),
   };
 }
 
+/** 降级直线：标记 degraded（keeps 来源 kind 语义不变），由渲染层以琥珀虚线区分。 */
 export function applyFallbackLine(
   data: TripData,
   segId: string,
@@ -296,7 +308,7 @@ export function applyFallbackLine(
       s.id === segId
         ? {
             ...s,
-            kind: "freehand" as const,
+            degraded: true,
             geometry: { type: "LineString" as const, coordinates: result.geometry },
             distanceM: result.distanceM,
             durationMin: result.durationMin,
@@ -307,6 +319,8 @@ export function applyFallbackLine(
 }
 
 const SNAP_DISTANCE_M = 100;
+/** 首尾吸附到同一站点时的最小绘制路径长度（米）：小于该值视为误触手滑，忽略本次绘制。 */
+const MIN_LOOP_PATH_M = 200;
 
 function findNearStop(stops: TripStop[], p: Position): TripStop | null {
   let best: TripStop | null = null;
@@ -332,6 +346,11 @@ export function completeFreehand(
   const last = geometry[geometry.length - 1];
   const start = findNearStop(data.stops, first);
   const end = findNearStop(data.stops, last);
+  // 首尾吸附到同一站点 = 环形路线（如绕一圈回起点）。此时首尾坐标必然各自距站点 <100m，
+  // 端点直线距离永远不足 200m，故以「绘制路径总长」判定：明显成环才保留，误触手滑则忽略。
+  if (start && start === end && pathLengthM(geometry) < MIN_LOOP_PATH_M) {
+    return result(data, data, []);
+  }
   const dayId = start?.dayId ?? end?.dayId ?? data.days[0]?.id ?? "d1";
 
   const newStops: TripStop[] = [];
@@ -400,8 +419,28 @@ export function updateSegmentVertex(
 export function markSegmentSnapped(data: TripData, segId: string): TripData {
   return {
     ...data,
-    segments: data.segments.map((s) => (s.id === segId ? { ...s, kind: "snapped" as const } : s)),
+    segments: data.segments.map((s) =>
+      s.id === segId ? { ...s, kind: "snapped" as const, degraded: false } : s,
+    ),
   };
+}
+
+/**
+ * 旧数据兼容：段 id 去重。历史上自动段 id 为 `A->B` 拼接，同一有序点对出现在
+ * 多个天时会产生重复 id，导致路线写入/删除互相覆盖；加载时给重复 id 重新分配。
+ */
+export function repairSegmentIds(data: TripData): TripData {
+  const seen = new Set<string>();
+  let changed = false;
+  const segments = data.segments.map((s) => {
+    if (seen.has(s.id)) {
+      changed = true;
+      return { ...s, id: nanoid(10) };
+    }
+    seen.add(s.id);
+    return s;
+  });
+  return changed ? { ...data, segments } : data;
 }
 
 export function simplifyVertices(coords: Position[], maxPoints: number): Position[] {

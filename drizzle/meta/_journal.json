@@ -15,6 +15,13 @@
       "when": 1786030213211,
       "tag": "0001_milky_mystique",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786185153152,
+      "tag": "0002_drop_trips_nickname",
+      "breakpoints": true
     }
   ]
 }
