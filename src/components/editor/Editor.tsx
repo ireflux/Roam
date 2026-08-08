@@ -74,7 +74,7 @@ export default function Editor({ trip }: { trip: Trip }) {
     [onboarding],
   );
 
-  useFreehandDraw(map, tool === "draw", onDrawCommit);
+  useFreehandDraw(map, tool === "draw", dragLocked, onDrawCommit);
   useVertexSnap(map, tool === "snap", data, selectedSegId, onVertexMove);
 
   const pickStop = useCallback((name: string, lng: number, lat: number) => {
