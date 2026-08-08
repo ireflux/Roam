@@ -106,7 +106,7 @@ export default function MapView({ className, onLoad }: { className?: string; onL
   // 因此定位类（absolute inset-0）放在外层 wrapper 上，地图容器只用 h-full w-full 撑满。
   return (
     <div className={className}>
-      <div ref={containerRef} className="h-full w-full" />
+      <div data-testid="map-container" ref={containerRef} className="h-full w-full" />
       {message && (
         <div className="absolute inset-0 flex items-center justify-center bg-zinc-100 p-6 text-center text-sm text-zinc-500">
           {message}

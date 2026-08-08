@@ -18,7 +18,13 @@ function stopContent(label: string, selected: boolean) {
 // 的地图 click 视为冒泡事件直接忽略。未触发冒泡时守卫会自然过期，不影响空白区点击。
 let lastOverlayClickAt = 0;
 
-export default function MapLayers({ map }: { map: AmapMap | null }) {
+interface MapLayersProps {
+  map: AmapMap | null;
+  /** true 时地图禁止平移拖拽（绘制/改线模式；双指缩放仍可用）。 */
+  dragLocked: boolean;
+}
+
+export default function MapLayers({ map, dragLocked }: MapLayersProps) {
   const trip = useTripStore((s) => s.trip);
   const tool = useTripStore((s) => s.tool);
   const selectedStopId = useTripStore((s) => s.selectedStopId);
@@ -131,11 +137,12 @@ export default function MapLayers({ map }: { map: AmapMap | null }) {
     return () => map.off("click", onClick);
   }, [map]);
 
+  // 绘制/改线时禁止平移（dragLocked），双指缩放照常；切换工具恢复
   useEffect(() => {
     if (!map) return;
     map.setDefaultCursor(tool === "add" ? "crosshair" : tool === "draw" ? "copy" : "default");
-    map.setStatus({ dragEnable: tool !== "draw" });
-  }, [map, tool]);
+    map.setStatus({ dragEnable: !dragLocked });
+  }, [map, tool, dragLocked]);
 
   return null;
 }

@@ -4,40 +4,59 @@ import { useEffect, useRef } from "react";
 import type { AmapMap, AmapOverlay } from "@/lib/mapTypes";
 import type { Position } from "@/lib/types";
 
+/**
+ * 自由手绘：pointer events（覆盖 mouse + touch）。
+ * 仅在绘制工具激活时挂载；绘制期间地图平移由 MapLayers 锁定（dragLocked），
+ * 双指缩放不受影响 —— 第一根手指始终是绘制手指，无需手势区分。
+ */
 export function useFreehandDraw(map: AmapMap | null, active: boolean, onCommit: (points: Position[]) => void) {
   const drawingRef = useRef(false);
+  const pointerIdRef = useRef<number | null>(null);
   const pointsRef = useRef<Position[]>([]);
   const lineRef = useRef<AmapOverlay | null>(null);
+  const containerRef = useRef<HTMLElement | null>(null);
   const onCommitRef = useRef(onCommit);
   useEffect(() => { onCommitRef.current = onCommit; }, [onCommit]);
 
   useEffect(() => {
+    const container = map?.getContainer?.() ?? null;
     if (!map || !window.AMap) return;
-    if (!active) {
+    if (!active || !container) {
       drawingRef.current = false;
+      pointerIdRef.current = null;
       pointsRef.current = [];
       lineRef.current?.setMap(null);
       lineRef.current = null;
+      containerRef.current = null;
       return;
     }
-    // 拖拽禁用/启用由 MapLayers 依据 tool 单点控制（dragEnable: tool !== "draw"），
-    // 此处不再触碰地图状态，避免恢复时序问题。
-    const position = (event: { lnglat: { getLng(): number; getLat(): number } }): Position => [event.lnglat.getLng(), event.lnglat.getLat()];
-    const onDown = (event: { lnglat: { getLng(): number; getLat(): number }; originalEvent?: MouseEvent }) => {
-      if (event.originalEvent?.button !== undefined && event.originalEvent.button !== 0) return;
+    containerRef.current = container;
+
+    const toPosition = (e: PointerEvent): Position => {
+      const lnglat = map.containerToLngLat([e.offsetX, e.offsetY]);
+      return [lnglat.getLng(), lnglat.getLat()];
+    };
+
+    const onDown = (e: PointerEvent) => {
+      if (pointerIdRef.current !== null) return; // 双指：忽略后续手指
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.preventDefault();
+      pointerIdRef.current = e.pointerId;
       drawingRef.current = true;
-      pointsRef.current = [position(event)];
+      pointsRef.current = [toPosition(e)];
       lineRef.current?.setMap(null);
-      lineRef.current = new window.AMap!.Polyline({ path: pointsRef.current, strokeColor: "#0d9488", strokeWeight: 5, strokeStyle: "dashed" });
+      lineRef.current = new window.AMap!.Polyline({ path: pointsRef.current, strokeColor: "#0d9488", strokeWeight: 6, strokeStyle: "dashed" });
       map.add(lineRef.current);
     };
-    const onMove = (event: { lnglat: { getLng(): number; getLat(): number } }) => {
-      if (!drawingRef.current) return;
-      pointsRef.current.push(position(event));
+    const onMove = (e: PointerEvent) => {
+      if (!drawingRef.current || e.pointerId !== pointerIdRef.current) return;
+      e.preventDefault();
+      pointsRef.current.push(toPosition(e));
       lineRef.current?.setPath?.(pointsRef.current);
     };
-    const onUp = () => {
-      if (!drawingRef.current) return;
+const finish = (e: PointerEvent) => {
+      if (!drawingRef.current || e.pointerId !== pointerIdRef.current) return;
+      pointerIdRef.current = null;
       drawingRef.current = false;
       const points = pointsRef.current;
       pointsRef.current = [];
@@ -45,13 +64,21 @@ export function useFreehandDraw(map: AmapMap | null, active: boolean, onCommit: 
       lineRef.current = null;
       if (points.length >= 2) onCommitRef.current(points);
     };
-    map.on("mousedown", onDown);
-    map.on("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+
+    container.addEventListener("pointerdown", onDown);
+    container.addEventListener("pointermove", onMove);
+    container.addEventListener("pointerup", finish);
+    container.addEventListener("pointercancel", finish);
     return () => {
-      map.off("mousedown", onDown);
-      map.off("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      container.removeEventListener("pointerdown", onDown);
+      container.removeEventListener("pointermove", onMove);
+      container.removeEventListener("pointerup", finish);
+      container.removeEventListener("pointercancel", finish);
+      drawingRef.current = false;
+      pointerIdRef.current = null;
+      pointsRef.current = [];
+      lineRef.current?.setMap(null);
+      lineRef.current = null;
     };
   }, [map, active]);
 }

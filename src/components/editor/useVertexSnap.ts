@@ -44,7 +44,9 @@ export function useVertexSnap(
       const marker = new window.AMap!.Marker({
         position,
         draggable: true,
-        content: '<span style="display:block;width:12px;height:12px;border:2px solid white;border-radius:50%;background:#7c3aed"></span>',
+        // 20px 触达区（手机端也够点）：外圈半透明保证可见性
+        content:
+          '<span style="display:block;width:12px;height:12px;border:3px solid white;border-radius:50%;background:#7c3aed;box-shadow:0 0 0 6px rgba(124,58,237,.25)"></span>',
         anchor: "center",
       });
       marker.on("dragging", (event) => {

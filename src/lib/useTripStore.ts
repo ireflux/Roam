@@ -39,10 +39,13 @@ interface TripState {
   segState: Record<string, SegState>;
   canUndo: boolean;
   canRedo: boolean;
+  /** 绘制/改线时地图是否允许用户解锁平移（默认锁定）。 */
+  mapUnlocked: boolean;
 
   load: (trip: Trip) => void;
   setMap: (map: AmapMap | null) => void;
   setTool: (tool: Tool) => void;
+  setMapUnlocked: (v: boolean) => void;
   setCurrentMode: (mode: Mode) => void;
   selectStop: (id: string | null) => void;
   selectSeg: (id: string | null) => void;
@@ -175,6 +178,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     segState: {},
     canUndo: false,
     canRedo: false,
+    mapUnlocked: false,
 
     load: (trip) => {
       clearSaveTimer();
@@ -198,9 +202,10 @@ export const useTripStore = create<TripState>((set, get) => ({
 
     setMap: (map) => set({ map }),
 
-    setTool: (tool) => set({ tool, selectedStopId: null, selectedSegId: null }),
+    setTool: (tool) => set({ tool, selectedStopId: null, selectedSegId: null, mapUnlocked: false }),
 
     setCurrentMode: (mode) => set({ currentMode: mode }),
+    setMapUnlocked: (v) => set({ mapUnlocked: v }),
 
     selectStop: (id) => set({ selectedStopId: id, selectedSegId: null }),
     selectSeg: (id) => set({ selectedSegId: id, selectedStopId: null }),
