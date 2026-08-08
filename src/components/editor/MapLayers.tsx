@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { AmapMap, AmapOverlay } from "@/lib/mapTypes";
 import type { Position, TripData, TripSegment } from "@/lib/types";
 import { useTripStore } from "@/lib/useTripStore";
+import { daySegments, dayStops } from "@/lib/trip/ops";
 import { setSegmentLine } from "@/lib/mapOverlays";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 const EMPTY_DATA: TripData = { days: [], stops: [], segments: [] };
 const COLORS = { driving: "#2563eb", walking: "#059669", cycling: "#ea580c", transit: "#0891b2", freehand: "#71717a", snapped: "#7c3aed", degraded: "#d97706" };
@@ -62,11 +64,20 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
   const tool = useTripStore((s) => s.tool);
   const selectedStopId = useTripStore((s) => s.selectedStopId);
   const selectedSegId = useTripStore((s) => s.selectedSegId);
+  const activeDayId = useTripStore((s) => s.activeDayId);
   const linesRef = useRef<Map<string, AmapOverlay[]>>(new Map());
   const markersRef = useRef<Map<string, AmapOverlay>>(new Map());
   /** overlay 归属的地图实例：map 实例变化（组件重挂载/StrictMode）时丢弃旧注册表，整图重建。 */
   const overlaysMapRef = useRef<AmapMap | null>(null);
+  /** 用户手动拖拽过地图后不再自动 fit（本次会话），map 实例变化时重置。 */
+  const userInteractedRef = useRef(false);
+  /** 已 fit 过的天：避免数据变化（画新路线/路径返回等）反复触发相机移动。 */
+  const fittedDayRef = useRef<string | null>(null);
+  const mobile = useIsMobile();
   const data = trip?.data ?? EMPTY_DATA;
+  const dayId = activeDayId ?? data.days[0]?.id ?? "";
+  const visibleStops = useMemo(() => dayStops(data, dayId), [data, dayId]);
+  const visibleSegments = useMemo(() => daySegments(data, dayId), [data, dayId]);
 
   // 增量同步：只对新增/删除/变化的段与站点增删改，不做全量重建。
   useEffect(() => {
@@ -76,16 +87,18 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
       overlaysMapRef.current = map;
       linesRef.current.clear();
       markersRef.current.clear();
+      userInteractedRef.current = false;
+      fittedDayRef.current = null;
     }
 
     try {
-      const segmentIds = new Set(data.segments.map((s) => s.id));
+      const segmentIds = new Set(visibleSegments.map((s) => s.id));
       for (const [segId, lines] of linesRef.current) {
         if (segmentIds.has(segId)) continue;
         map.remove(lines);
         linesRef.current.delete(segId);
       }
-      const stopIds = new Set(data.stops.map((s) => s.id));
+      const stopIds = new Set(visibleStops.map((s) => s.id));
       for (const [stopId, marker] of markersRef.current) {
         if (stopIds.has(stopId)) continue;
         map.remove(marker);
@@ -97,7 +110,7 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
 
     const labels = stopLabels(data);
 
-    for (const segment of data.segments) {
+    for (const segment of visibleSegments) {
       const parts: { kind: "transit" | "walking"; coordinates: Position[] }[] =
         segment.parts && segment.parts.length > 0
           ? segment.parts
@@ -140,7 +153,7 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
       linesRef.current.set(segment.id, lines);
     }
 
-    for (const stop of data.stops) {
+    for (const stop of visibleStops) {
       const label = labels.get(stop.id) ?? "";
       const existing = markersRef.current.get(stop.id);
       if (existing) {
@@ -164,7 +177,7 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
       }
       markersRef.current.set(stop.id, marker);
     }
-  }, [map, data]);
+  }, [map, data, visibleStops, visibleSegments, dayId]);
 
   // 选中态仅做指令式样式更新，不重建覆盖物
   useEffect(() => {
@@ -210,6 +223,34 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
     map.setDefaultCursor(tool === "add" ? "crosshair" : tool === "draw" ? "copy" : "default");
     map.setStatus({ dragEnable: !dragLocked });
   }, [map, tool, dragLocked]);
+
+  // 用户手动拖拽后接管相机：之后的自动 fit 全部跳过（本次会话内）
+  useEffect(() => {
+    if (!map) return;
+    const mark = () => {
+      userInteractedRef.current = true;
+    };
+    map.on("dragstart", mark);
+    return () => map.off("dragstart", mark);
+  }, [map]);
+
+  // 相机自动跟随：进入行程 fit 首天 / 切换标签 fit 当前天的可见路线。
+  // 空天不移动相机；绘制完成后的数据变化不触发（fittedDayRef 已记录该天）。
+  useEffect(() => {
+    if (!map || userInteractedRef.current || !dayId) return;
+    if (fittedDayRef.current === dayId) return;
+    const overlays = [...linesRef.current.values()].flat().concat([...markersRef.current.values()]);
+    if (overlays.length === 0) {
+      fittedDayRef.current = dayId;
+      return;
+    }
+    try {
+      map.setFitView(overlays, true, mobile ? [48, 48, 48, 48] : [48, 48, 48, 380], 16);
+      fittedDayRef.current = dayId;
+    } catch {
+      // map 实例可能已被 MapView 销毁（路由切换时序），静默跳过
+    }
+  }, [map, data, dayId, mobile]);
 
   return null;
 }

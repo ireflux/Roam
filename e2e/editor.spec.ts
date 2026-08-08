@@ -113,4 +113,60 @@ test.describe("编辑器冒烟", () => {
     await expect(page.getByText("第 3 天")).toHaveCount(1);
     await expect(page.getByText("第 1 天")).toHaveCount(1);
   });
+
+  test("桌面端：改天标签联动列表；单击列表行定位（不进入编辑），hover 铅笔进入编辑", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.includes("mobile"), "仅桌面端");
+    const res = await page.request.post("/api/trips", { data: { title: "多地测试行程" } });
+    expect(res.ok()).toBeTruthy();
+    const { id } = (await res.json()) as { id: string };
+    const seed = await page.request.patch(`/api/trips/${id}`, {
+      data: {
+        data: {
+          days: [
+            { id: "d1", name: "第 1 天" },
+            { id: "d2", name: "第 2 天" },
+          ],
+          stops: [
+            { id: "s1", dayId: "d1", name: "第一站", lat: 31.1, lng: 121.1, order: 0 },
+            { id: "s2", dayId: "d2", name: "第二站", lat: 30.9, lng: 120.9, order: 0 },
+          ],
+          segments: [],
+        },
+      },
+    });
+    expect(seed.ok()).toBeTruthy();
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem("roam_onb", JSON.stringify({ l0Done: true, hints: {} }));
+      } catch {
+        /* noop */
+      }
+    });
+    await page.goto(`/editor/${id}`);
+    await expect(page.getByTestId("map-container")).toBeVisible({ timeout: 30_000 });
+
+    const rows = page.locator("li[data-stop-id]");
+    // 默认第 1 天：列表只显示第一站
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("第一站");
+
+    // 切到第 2 天：列表只剩第二站
+    await page.locator('div[role="button"]', { hasText: "第 2 天" }).click();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("第二站");
+
+    // 单击地点行 = 定位，不进入编辑
+    await rows.first().click();
+    await expect(page.getByPlaceholder("地点名称")).toHaveCount(0);
+
+    // hover 出现铅笔按钮，点击进入编辑
+    const pencil = page.getByRole("button", { name: "编辑 第二站", exact: true });
+    await expect(pencil).toHaveCSS("opacity", "0");
+    await rows.first().hover();
+    await expect(pencil).toHaveCSS("opacity", "1");
+    await pencil.click();
+    await expect(page.getByPlaceholder("地点名称")).toBeVisible();
+    await page.getByRole("button", { name: "取消" }).click();
+    await expect(page.getByPlaceholder("地点名称")).toHaveCount(0);
+  });
 });

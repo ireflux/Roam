@@ -272,11 +272,6 @@ function DayTabs({
           const deleted = pendingDeleteId;
           if (!deleted) return;
           useTripStore.getState().removeDay(deleted);
-          if (dayId === deleted) {
-            const idx = data.days.findIndex((d) => d.id === deleted);
-            const next = data.days[idx + 1] ?? data.days[idx - 1];
-            onDayChange(next?.id ?? "");
-          }
           setPendingDeleteId(null);
         }}
         onCancel={() => setPendingDeleteId(null)}
@@ -408,7 +403,7 @@ function StopCard({
     setEditing(false);
   };
 
-  const cardClass = `rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950 ${
+  const cardClass = `group rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950 ${
     dragging ? "z-10 scale-[1.02] shadow-2xl ring-2 ring-emerald-500" : "cursor-pointer"
   }`;
 
@@ -462,10 +457,7 @@ function StopCard({
       ) : (
         <div
           className="flex items-center gap-3"
-          onClick={() => {
-            if (mobile && onLocateStop) onLocateStop(stop);
-            else setEditing(true);
-          }}
+          onClick={() => onLocateStop?.(stop)}
         >
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-semibold text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
             {index + 1}
@@ -506,7 +498,22 @@ function StopCard({
               </button>
             </>
           ) : (
-            <span className="text-xs text-zinc-300">拖拽排序</span>
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditing(true);
+                }}
+                title="编辑"
+                aria-label={`编辑 ${stop.name || "未命名地点"}`}
+                className="shrink-0 rounded-full p-1.5 text-zinc-400 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 hover:bg-zinc-100 hover:text-emerald-600 dark:hover:bg-zinc-800"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                </svg>
+              </button>
+              <span className="text-xs text-zinc-300">拖拽排序</span>
+            </>
           )}
           <button
             onClick={(e) => {

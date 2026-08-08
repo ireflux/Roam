@@ -78,6 +78,28 @@ function stopsOfDay(data: TripData, dayId: string): TripStop[] {
     .sort((a, b) => a.order - b.order);
 }
 
+/** 某天的所有站点（渲染可见性的判定；与 stopsOfDay 的差异：不排序）。 */
+export function dayStops(data: TripData, dayId: string): TripStop[] {
+  return data.stops.filter((s) => s.dayId === dayId);
+}
+
+/** 某天可见的段：段归属 = 起点站所在天（跨天段随起点站显示）。 */
+export function daySegments(data: TripData, dayId: string): TripSegment[] {
+  const stopIds = new Set(dayStops(data, dayId).map((s) => s.id));
+  return data.segments.filter((s) => stopIds.has(s.fromStop));
+}
+
+/**
+ * 删除天后的 active 迁移：被删天恰是当前选中时返回相邻天（优先后一天，其次前一天），
+ * 否则原样保留。纯函数，供 store 唯一协调 activeDayId。
+ */
+export function nextActiveAfterDayRemoved(days: TripDay[], removedId: string, activeId: string | null): string | null {
+  if (activeId !== removedId) return activeId;
+  const rest = days.filter((d) => d.id !== removedId);
+  const idx = days.findIndex((d) => d.id === removedId);
+  return rest[Math.min(idx, rest.length - 1)]?.id ?? null;
+}
+
 function posOf(stop: TripStop): Position {
   return [stop.lng, stop.lat];
 }
@@ -339,6 +361,8 @@ export function completeFreehand(
   data: TripData,
   points: Position[],
   mode: Mode,
+  /** 无吸附端点时新建站点归属的天（编辑器传入当前选中的天）。 */
+  fallbackDayId?: string,
 ): OpsResult {
   if (points.length < 2) return result(data, data, []);
   const geometry = simplifyLine(points, { toleranceM: 8, maxPoints: 2000 });
@@ -351,7 +375,7 @@ export function completeFreehand(
   if (start && start === end && pathLengthM(geometry) < MIN_LOOP_PATH_M) {
     return result(data, data, []);
   }
-  const dayId = start?.dayId ?? end?.dayId ?? data.days[0]?.id ?? "d1";
+  const dayId = start?.dayId ?? end?.dayId ?? fallbackDayId ?? data.days[0]?.id ?? "d1";
 
   const newStops: TripStop[] = [];
   let from = start;
@@ -449,7 +473,7 @@ export function simplifyVertices(coords: Position[], maxPoints: number): Positio
 
 export function addDay(data: TripData): OpsResult {
   const day: TripDay = { id: nanoid(10), name: autoDayName(data.days) };
-  return result(data, { ...data, days: [...data.days, day] }, []);
+  return result(data, { ...data, days: [...data.days, day] }, [], day.id);
 }
 
 /**

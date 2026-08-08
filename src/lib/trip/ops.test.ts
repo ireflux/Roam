@@ -6,8 +6,11 @@ import {
   applyRoute,
   autoSegment,
   completeFreehand,
+  daySegments,
+  dayStops,
   markSegmentSnapped,
   moveStopToDay,
+  nextActiveAfterDayRemoved,
   removeDay,
   removeStop,
   renameDay,
@@ -609,5 +612,118 @@ describe("reorderDays", () => {
     expect(reorderDays(data, 0, 0).changed).toBe(false);
     expect(reorderDays(data, 0, 5).changed).toBe(false);
     expect(reorderDays(data, -1, 1).changed).toBe(false);
+  });
+});
+
+describe("dayStops / daySegments（按天可见性）", () => {
+  const d1 = { id: "d1", name: "第 1 天" };
+  const d2 = { id: "d2", name: "第 2 天" };
+  const a = stop("a", 0, "A");
+  const b = stop("b", 1, "B");
+  const x = { ...stop("x", 0, "X"), dayId: "d2" };
+  const y = { ...stop("y", 1, "Y"), dayId: "d2" };
+  const withinD1 = autoSegment(a, b, "driving");
+  const withinD2 = autoSegment(x, y, "walking");
+  // 跨天段：起点 b 在 d1、终点 x 在 d2 → 归属 d1
+  const cross = autoSegment(b, x, "transit");
+  const data: TripData = {
+    days: [d1, d2],
+    stops: [a, b, x, y],
+    segments: [withinD1, withinD2, cross],
+  };
+
+  it("dayStops 只返回指定天的站点", () => {
+    expect(dayStops(data, "d1").map((s) => s.id)).toEqual(["a", "b"]);
+    expect(dayStops(data, "d2").map((s) => s.id)).toEqual(["x", "y"]);
+  });
+
+  it("daySegments 归并跨天段到起点站所在天", () => {
+    expect(daySegments(data, "d1").map((s) => s.id)).toEqual([withinD1.id, cross.id]);
+    expect(daySegments(data, "d2").map((s) => s.id)).toEqual([withinD2.id]);
+  });
+
+  it("站点移到别天后段随起点迁移", () => {
+    const moved = moveStopToDay(data, "b", "d2");
+    // b 移走后：d1 只剩 a（无段）；d2 尾部重连出 y→b 新段（b 已属 d2）
+    expect(daySegments(moved.data, "d1")).toHaveLength(0);
+    const d2Segs = daySegments(moved.data, "d2");
+    expect(d2Segs).toHaveLength(2);
+    expect(d2Segs.map((s) => s.toStop)).toContain("b");
+  });
+});
+
+describe("completeFreehand 的天归属", () => {
+  it("无吸附端点时落入 fallbackDayId（编辑器当前标签）", () => {
+    const data: TripData = {
+      days: [
+        { id: "d1", name: "第 1 天" },
+        { id: "d2", name: "第 2 天" },
+      ],
+      stops: [],
+      segments: [],
+    };
+    const r = completeFreehand(data, [[0, 0], [1, 1]], "walking", "d2");
+    expect(r.data.stops.map((s) => s.dayId)).toEqual(["d2", "d2"]);
+  });
+
+  it("fallbackDayId 未提供时回落 days[0]", () => {
+    const data: TripData = {
+      days: [
+        { id: "d1", name: "第 1 天" },
+        { id: "d2", name: "第 2 天" },
+      ],
+      stops: [],
+      segments: [],
+    };
+    const r = completeFreehand(data, [[0, 0], [1, 1]], "walking");
+    expect(r.data.stops.map((s) => s.dayId)).toEqual(["d1", "d1"]);
+  });
+
+  it("吸附端点优先于 fallbackDayId", () => {
+    const b = stop("b", 0, "B");
+    const data: TripData = {
+      days: [
+        { id: "d1", name: "第 1 天" },
+        { id: "d2", name: "第 2 天" },
+      ],
+      stops: [{ ...b, dayId: "d2" }],
+      segments: [],
+    };
+    // 首端吸附 d2 的站点 b，即使 fallback 是 d1 也落入 d2
+    const r = completeFreehand(data, [[b.lng + 0.0005, b.lat], [5, 5]], "cycling", "d1");
+    expect(r.data.stops.find((s) => s.name === "绘制终点")!.dayId).toBe("d2");
+  });
+});
+
+describe("addDay / nextActiveAfterDayRemoved（active 天协调）", () => {
+  it("addDay 返回新天 id（store 用其切换 active）", () => {
+    const r = addDay(emptyData());
+    expect(r.addedId).toBe(r.data.days[1].id);
+  });
+
+  it("删除非选中天时 active 保持不变", () => {
+    const days = [
+      { id: "d1", name: "第 1 天" },
+      { id: "d2", name: "第 2 天" },
+      { id: "d3", name: "第 3 天" },
+    ];
+    expect(nextActiveAfterDayRemoved(days, "d2", "d1")).toBe("d1");
+    expect(nextActiveAfterDayRemoved(days, "d1", null)).toBeNull();
+  });
+
+  it("删除选中天时迁移到相邻天（优先后一天）", () => {
+    const days = [
+      { id: "d1", name: "第 1 天" },
+      { id: "d2", name: "第 2 天" },
+      { id: "d3", name: "第 3 天" },
+    ];
+    expect(nextActiveAfterDayRemoved(days, "d2", "d2")).toBe("d3");
+    expect(nextActiveAfterDayRemoved(days, "d3", "d3")).toBe("d2");
+    expect(nextActiveAfterDayRemoved(days, "d1", "d1")).toBe("d2");
+  });
+
+  it("删除唯一天时 active 回退 null", () => {
+    const days = [{ id: "d1", name: "第 1 天" }];
+    expect(nextActiveAfterDayRemoved(days, "d1", "d1")).toBeNull();
   });
 });

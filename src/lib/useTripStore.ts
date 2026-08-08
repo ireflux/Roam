@@ -12,6 +12,7 @@ import {
   completeFreehand as opCompleteFreehand,
   markSegmentSnapped,
   moveStopToDay as opMoveStopToDay,
+  nextActiveAfterDayRemoved,
   removeDay as opRemoveDay,
   removeStop as opRemoveStop,
   renameDay as opRenameDay,
@@ -35,6 +36,8 @@ interface TripState {
   map: AmapMap | null;
   tool: Tool;
   currentMode: Mode;
+  /** 当前选中的天标签（编辑器地图渲染与新增归属共用）。null = 未显式选择，回落 days[0]。 */
+  activeDayId: string | null;
   selectedStopId: string | null;
   selectedSegId: string | null;
   segState: Record<string, SegState>;
@@ -48,6 +51,7 @@ interface TripState {
   setTool: (tool: Tool) => void;
   setMapUnlocked: (v: boolean) => void;
   setCurrentMode: (mode: Mode) => void;
+  setActiveDayId: (dayId: string | null) => void;
   selectStop: (id: string | null) => void;
   selectSeg: (id: string | null) => void;
 
@@ -184,6 +188,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     map: null,
     tool: "select",
     currentMode: "driving",
+    activeDayId: null,
     selectedStopId: null,
     selectedSegId: null,
     segState: {},
@@ -205,6 +210,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       set({
         trip: hydrated,
         status: "idle",
+        activeDayId: null,
         segState: {},
         selectedStopId: null,
         selectedSegId: null,
@@ -219,6 +225,7 @@ export const useTripStore = create<TripState>((set, get) => ({
 
     setCurrentMode: (mode) => set({ currentMode: mode }),
     setMapUnlocked: (v) => set({ mapUnlocked: v }),
+    setActiveDayId: (dayId) => set({ activeDayId: dayId }),
 
     selectStop: (id) => set({ selectedStopId: id, selectedSegId: null }),
     selectSeg: (id) => set({ selectedSegId: id, selectedStopId: null }),
@@ -232,10 +239,10 @@ export const useTripStore = create<TripState>((set, get) => ({
     },
 
     addStopAt: (input) => {
-      const { trip } = get();
+      const { trip, activeDayId } = get();
       if (!trip) return undefined;
       pushHistory(trip.data);
-      const dayId = input.dayId ?? trip.data.days[0]?.id ?? "d1";
+      const dayId = input.dayId ?? activeDayId ?? trip.data.days[0]?.id ?? "d1";
       const res = opAddStop(trip.data, { ...input, dayId });
       const newStopId =
         res.addedId ??
@@ -393,10 +400,10 @@ export const useTripStore = create<TripState>((set, get) => ({
     },
 
     completeFreehand: (points, mode) => {
-      const { trip } = get();
+      const { trip, activeDayId } = get();
       if (!trip) return;
       pushHistory(trip.data);
-      const res = opCompleteFreehand(trip.data, points, mode);
+      const res = opCompleteFreehand(trip.data, points, mode, activeDayId ?? undefined);
       set({ trip: { ...trip, data: res.data } });
       scheduleSave(get);
     },
@@ -417,16 +424,21 @@ export const useTripStore = create<TripState>((set, get) => ({
       if (!trip) return;
       pushHistory(trip.data);
       const res = opAddDay(trip.data);
-      set({ trip: { ...trip, data: res.data } });
+      set({ trip: { ...trip, data: res.data }, activeDayId: res.addedId ?? null });
       scheduleSave(get);
     },
 
     removeDay: (dayId) => {
-      const { trip } = get();
+      const { trip, activeDayId } = get();
       if (!trip) return;
       pushHistory(trip.data);
       const res = opRemoveDay(trip.data, dayId);
-      set({ trip: { ...trip, data: res.data } });
+      if (!res.changed) return;
+      // 被删的天恰是当前选中：迁移到相邻天（唯一协调入口，UI 不再各自处理）
+      set({
+        trip: { ...trip, data: res.data },
+        activeDayId: nextActiveAfterDayRemoved(trip.data.days, dayId, activeDayId),
+      });
       scheduleSave(get);
     },
 

@@ -35,8 +35,9 @@ export default function Editor({ trip }: { trip: Trip }) {
   const load = useTripStore((s) => s.load);
   const tool = useTripStore((s) => s.tool);
   const selectedSegId = useTripStore((s) => s.selectedSegId);
+  const activeDayId = useTripStore((s) => s.activeDayId);
+  const setActiveDayId = useTripStore((s) => s.setActiveDayId);
 
-  const [activeDayId, setActiveDayId] = useState<string | null>(null);
   const [trafficOn, setTrafficOn] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [toast, setToast] = useState<{ key: number; text: string; action?: { label: string; onActivate: () => void } } | null>(null);
@@ -185,6 +186,7 @@ export default function Editor({ trip }: { trip: Trip }) {
               data={data}
               activeDayId={dayId}
               onDayChange={setActiveDayId}
+              onLocateStop={locateStop}
               onStopDeleted={onStopDeleted}
             />
           </aside>
