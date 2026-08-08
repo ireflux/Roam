@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface WelcomeOverlayProps {
   onDone: () => void;
@@ -22,6 +22,17 @@ const STEPS = [
 /** L0 欢迎层：首次进入编辑器展示的 2 步轻量引导，可跳过，只出现一次。 */
 export default function WelcomeOverlay({ onDone }: WelcomeOverlayProps) {
   const [step, setStep] = useState(0);
+  const [mounted, setMounted] = useState(false);
+
+  // 是否存在取决于 localStorage（useOnboarding），首帧必须与 SSR HTML 一致，
+  // 否则 hydration mismatch。mount 后再揭晓——新用户会看到，老用户也不会闪。
+  // mounted 门是此处有意为之，set-state-in-effect 规则不适用。
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true);
+  }, []);
+  if (!mounted) return null;
+
   const current = STEPS[step];
 
   return (
