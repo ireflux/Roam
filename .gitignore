@@ -44,4 +44,5 @@ next-env.d.ts
 # others
 .claude/
 opencode.json
+.superpowers/
 
