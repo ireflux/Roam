@@ -105,21 +105,32 @@ function posOf(stop: TripStop): Position {
 }
 
 /**
- * 自动段：id 用 nanoid 而非 `A->B` 拼接——同一有序点对出现在不同天时
- * 拼接 id 会碰撞，导致 applyRoute/删除/渲染互相覆盖。
+ * 按两点直线距离自动推荐出行方式（<1.5km 步行，1.5–8km 骑行，>8km 驾车；公交不自动）。
  */
-export function autoSegment(prev: TripStop, next: TripStop, mode: Mode): TripSegment {
+export function suggestMode(distanceM: number): Mode {
+  if (distanceM < 1500) return "walking";
+  if (distanceM <= 8000) return "cycling";
+  return "driving";
+}
+
+/**
+ * 自动段：id 用 nanoid 而非 `A->B` 拼接——同一有序站点对出现在不同天时
+ * 拼接 id 会碰撞，导致 applyRoute/删除/渲染互相覆盖。
+ * 未显式指定方式时按两点直线距离启发式推荐。
+ */
+export function autoSegment(prev: TripStop, next: TripStop, mode?: Mode): TripSegment {
+  const distanceM = roughDistanceM(posOf(prev), posOf(next));
   return {
     id: nanoid(10),
     fromStop: prev.id,
     toStop: next.id,
-    mode,
+    mode: mode ?? suggestMode(distanceM),
     kind: "auto",
     geometry: {
       type: "LineString",
       coordinates: [posOf(prev), posOf(next)],
     },
-    distanceM: roughDistanceM(posOf(prev), posOf(next)),
+    distanceM,
     durationMin: 0,
   };
 }
@@ -138,7 +149,7 @@ export function segmentRequest(seg: TripSegment): SegmentRequest {
 
 export function addStop(
   data: TripData,
-  input: { dayId: string; name: string; lat: number; lng: number; mode: Mode },
+  input: { dayId: string; name: string; lat: number; lng: number },
 ): OpsResult {
   const withDay = ensureDay(data, input.dayId);
   const dayStops = stopsOfDay(withDay, input.dayId);
@@ -154,7 +165,7 @@ export function addStop(
   const prev = dayStops.at(-1);
   let nextData: TripData;
   if (prev) {
-    const seg = autoSegment(prev, stop, input.mode);
+    const seg = autoSegment(prev, stop);
     needed.push(segmentRequest(seg));
     nextData = {
       ...withDay,
@@ -179,11 +190,10 @@ export function removeStop(data: TripData, stopId: string): OpsResult {
   const needed: SegmentRequest[] = [];
 
   if (prev && next) {
-    // 从原始段（过滤前）继承被删站点前后的出行方式，避免恒为 driving
-    const inheritMode: Mode =
+    // 从原始段（过滤前）继承被删站点前后的出行方式；无相邻偏好时按距离推荐
+    const inheritMode: Mode | undefined =
       data.segments.find((s) => s.fromStop === prev.id && s.toStop === stopId)?.mode
-      ?? data.segments.find((s) => s.fromStop === stopId && s.toStop === next.id)?.mode
-      ?? "driving";
+      ?? data.segments.find((s) => s.fromStop === stopId && s.toStop === next.id)?.mode;
     const seg = autoSegment(prev, next, inheritMode);
     needed.push(segmentRequest(seg));
     return result(data, {
@@ -212,16 +222,18 @@ function pairKey(a: TripStop, b: TripStop): string {
   return `${a.id}|${b.id}`;
 }
 
-/** 为新相邻对从相邻段继承出行方式（优先原方向，其次反向/相邻站点）。 */
-function inheritNeighborMode(data: TripData, a: TripStop, b: TripStop): Mode {
+/**
+ * 为新相邻对从相邻段继承出行方式（优先原方向，其次反向/相邻站点）；
+ * 无任何相邻偏好时返回 undefined，由调用方落回距离启发式。
+ */
+function inheritNeighborMode(data: TripData, a: TripStop, b: TripStop): Mode | undefined {
   const direct = data.segments.find((s) => s.fromStop === a.id && s.toStop === b.id);
   if (direct) return direct.mode;
   const reverse = data.segments.find((s) => s.fromStop === b.id && s.toStop === a.id);
   if (reverse) return reverse.mode;
-  const touching = data.segments.find(
+  return data.segments.find(
     (s) => s.toStop === a.id || s.fromStop === a.id || s.toStop === b.id || s.fromStop === b.id,
-  );
-  return touching?.mode ?? "driving";
+  )?.mode;
 }
 
 export function reorderStops(data: TripData, dayId: string, fromIdx: number, toIdx: number): OpsResult {
@@ -360,7 +372,6 @@ function findNearStop(stops: TripStop[], p: Position): TripStop | null {
 export function completeFreehand(
   data: TripData,
   points: Position[],
-  mode: Mode,
   /** 无吸附端点时新建站点归属的天（编辑器传入当前选中的天）。 */
   fallbackDayId?: string,
 ): OpsResult {
@@ -408,7 +419,8 @@ export function completeFreehand(
     id: nanoid(10),
     fromStop: from.id,
     toStop: to.id,
-    mode,
+    // 仅作标签：手绘段不自动规划路线，按绘制路径总长启发式
+    mode: suggestMode(pathLengthM(geometry)),
     kind: "freehand",
     geometry: { type: "LineString", coordinates: geometry },
     distanceM: roughDistanceM(first, last),
@@ -541,11 +553,10 @@ export function moveStopToDay(data: TripData, stopId: string, dayId: string): Op
   const prev = srcIdx > 0 ? srcSorted[srcIdx - 1] : null;
   const next = srcIdx < srcSorted.length - 1 ? srcSorted[srcIdx + 1] : null;
   if (prev && next) {
-    // 继承被移走站点原前后段的出行方式（来源段仍存在于原始 data.segments）
-    const reconnectMode: Mode =
+    // 继承被移走站点原前后段的出行方式（来源段仍存在于原始 data.segments）；无相邻偏好时按距离推荐
+    const reconnectMode: Mode | undefined =
       data.segments.find((s) => s.fromStop === prev.id && s.toStop === stopId)?.mode
-      ?? data.segments.find((s) => s.fromStop === stopId && s.toStop === next.id)?.mode
-      ?? "driving";
+      ?? data.segments.find((s) => s.fromStop === stopId && s.toStop === next.id)?.mode;
     const seg = autoSegment(prev, next, reconnectMode);
     segments.push(seg);
     needed.push(segmentRequest(seg));
@@ -555,11 +566,10 @@ export function moveStopToDay(data: TripData, stopId: string, dayId: string): Op
   if (targetSorted.length >= 2) {
     const a = targetSorted[targetSorted.length - 2];
     const b = stop;
-    // 新尾部段继承站点原有的到达/出发方式
-    const carriedMode: Mode =
+    // 新尾段段继承站点原有的到达/出发方式；无相邻偏好时按距离推荐
+    const carriedMode: Mode | undefined =
       data.segments.find((s) => s.toStop === stopId)?.mode
-      ?? data.segments.find((s) => s.fromStop === stopId)?.mode
-      ?? "driving";
+      ?? data.segments.find((s) => s.fromStop === stopId)?.mode;
     const seg = autoSegment(a, b, carriedMode);
     segments.push(seg);
     needed.push(segmentRequest(seg));

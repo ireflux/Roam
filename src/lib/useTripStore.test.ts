@@ -33,7 +33,7 @@ beforeEach(() => {
 describe("addStopAt 的天归属", () => {
   it("未选中天时回落 days[0]", () => {
     useTripStore.getState().load(twoDayTrip());
-    const id = useTripStore.getState().addStopAt({ name: "A", lat: 1, lng: 1, mode: "driving" });
+    const id = useTripStore.getState().addStopAt({ name: "A", lat: 1, lng: 1 });
     const stop = useTripStore.getState().trip!.data.stops.find((s) => s.id === id)!;
     expect(stop.dayId).toBe("d1");
   });
@@ -41,7 +41,7 @@ describe("addStopAt 的天归属", () => {
   it("跟随当前选中的天", () => {
     useTripStore.getState().load(twoDayTrip());
     useTripStore.getState().setActiveDayId("d2");
-    const id = useTripStore.getState().addStopAt({ name: "A", lat: 1, lng: 1, mode: "driving" });
+    const id = useTripStore.getState().addStopAt({ name: "A", lat: 1, lng: 1 });
     const stop = useTripStore.getState().trip!.data.stops.find((s) => s.id === id)!;
     expect(stop.dayId).toBe("d2");
   });
@@ -49,7 +49,7 @@ describe("addStopAt 的天归属", () => {
   it("显式 dayId 优先于 active", () => {
     useTripStore.getState().load(twoDayTrip());
     useTripStore.getState().setActiveDayId("d2");
-    const id = useTripStore.getState().addStopAt({ dayId: "d1", name: "A", lat: 1, lng: 1, mode: "driving" });
+    const id = useTripStore.getState().addStopAt({ dayId: "d1", name: "A", lat: 1, lng: 1 });
     const stop = useTripStore.getState().trip!.data.stops.find((s) => s.id === id)!;
     expect(stop.dayId).toBe("d1");
   });
@@ -59,7 +59,7 @@ describe("completeFreehand 的天归属", () => {
   it("无吸附端点时落入 activeDayId", () => {
     useTripStore.getState().load(twoDayTrip());
     useTripStore.getState().setActiveDayId("d2");
-    useTripStore.getState().completeFreehand([[0, 0], [1, 1]], "walking");
+    useTripStore.getState().completeFreehand([[0, 0], [1, 1]]);
     const stops = useTripStore.getState().trip!.data.stops;
     expect(stops.map((s) => s.dayId)).toEqual(["d2", "d2"]);
   });

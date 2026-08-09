@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pathLengthM, roughDistanceM, simplifyLine, simplifyVertexIndices, uniformSample } from "@/lib/trip/geo";
+import { pathLengthM, pointAtFraction, roughDistanceM, simplifyLine, simplifyVertexIndices, uniformSample } from "@/lib/trip/geo";
 import type { Position } from "@/lib/types";
 
 describe("simplifyVertexIndices", () => {
@@ -63,5 +63,28 @@ describe("pathLengthM", () => {
   it("空/单点返回 0", () => {
     expect(pathLengthM([])).toBe(0);
     expect(pathLengthM([[1, 2]])).toBe(0);
+  });
+});
+
+describe("pointAtFraction", () => {
+  it("比例按累计路径长度而非顶点数", () => {
+    // 第一段 2 米、第二段 18 米：50% 应落在第二段距起点 2/20 处
+const pts: Position[] = [[0, 0], [0.000010, 0], [0.000180, 0]];
+    const p = pointAtFraction(pts, 0.5);
+    const totalM = pathLengthM(pts);
+    expect(roughDistanceM(pts[0], p)).toBeCloseTo(totalM * 0.5, 0);
+  });
+
+  it("首尾与越界", () => {
+    const pts: Position[] = [[0, 0], [1, 1], [2, 0]];
+    expect(pointAtFraction(pts, 0)).toEqual([0, 0]);
+    expect(pointAtFraction(pts, 1)).toEqual([2, 0]);
+    expect(pointAtFraction(pts, -1)).toEqual([0, 0]);
+    expect(pointAtFraction(pts, 2)).toEqual([2, 0]);
+  });
+
+  it("空/单点安全", () => {
+    expect(pointAtFraction([], 0.5)).toEqual([0, 0]);
+    expect(pointAtFraction([[1, 2]], 0.5)).toEqual([1, 2]);
   });
 });

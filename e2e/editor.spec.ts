@@ -38,7 +38,6 @@ test.describe("编辑器冒烟", () => {
   test("桌面端：加载后侧栏、工具行与地图可见", async ({ page }) => {
     await gotoEditor(page);
     await expect(page.getByTestId("trip-title-button")).toBeVisible();
-    await expect(page.getByTitle("实时路况")).toBeVisible();
     await expect(page.getByPlaceholder(/搜索地点/)).toBeVisible();
   });
 
@@ -64,7 +63,7 @@ test.describe("编辑器冒烟", () => {
   test("移动端：搜索聚焦收起工具行，完成后恢复", async ({ page }, testInfo) => {
     test.skip(!testInfo.project.name.includes("mobile"), "仅移动端");
     await gotoEditor(page);
-    const toolChip = page.getByTitle("实时路况").first();
+    const toolChip = page.getByTitle("绘制").first();
     await expect(toolChip).toBeVisible();
     await page.getByPlaceholder(/搜索地点/).first().click();
     await expect(toolChip).toBeHidden({ timeout: 5_000 });

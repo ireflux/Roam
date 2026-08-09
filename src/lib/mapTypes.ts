@@ -1,7 +1,7 @@
 import type { Position } from "@/lib/types";
 
 export type AmapMouseEvent = { lnglat: { getLng(): number; getLat(): number }; originalEvent?: MouseEvent };
-export type AmapOverlay = { on(event: string, listener: (event: AmapMouseEvent) => void): void; off?(event: string, listener: (event: AmapMouseEvent) => void): void; setMap(map: AmapMap | null): void; setPath?(path: Position[]): void; setPosition?(position: Position): void; setContent?(content: string): void; setOptions?(options: Record<string, unknown>): void };
+export type AmapOverlay = { on(event: string, listener: (event: AmapMouseEvent) => void): void; off?(event: string, listener: (event: AmapMouseEvent) => void): void; setMap(map: AmapMap | null): void; setPath?(path: Position[]): void; setPosition?(position: Position): void; setContent?(content: string): void; setOptions?(options: Record<string, unknown>): void; setVisible?(visible: boolean): void };
 export type AmapLngLat = { getLng(): number; getLat(): number };
 export type AmapMap = {
   on(event: string, listener: (event: AmapMouseEvent) => void): void;

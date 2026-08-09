@@ -35,7 +35,6 @@ interface TripState {
   status: SaveStatus;
   map: AmapMap | null;
   tool: Tool;
-  currentMode: Mode;
   /** 当前选中的天标签（编辑器地图渲染与新增归属共用）。null = 未显式选择，回落 days[0]。 */
   activeDayId: string | null;
   selectedStopId: string | null;
@@ -50,20 +49,19 @@ interface TripState {
   setMap: (map: AmapMap | null) => void;
   setTool: (tool: Tool) => void;
   setMapUnlocked: (v: boolean) => void;
-  setCurrentMode: (mode: Mode) => void;
   setActiveDayId: (dayId: string | null) => void;
   selectStop: (id: string | null) => void;
   selectSeg: (id: string | null) => void;
 
   setTitle: (title: string) => void;
-  addStopAt: (input: { dayId?: string; name: string; lat: number; lng: number; mode: Mode }) => string | undefined;
+  addStopAt: (input: { dayId?: string; name: string; lat: number; lng: number }) => string | undefined;
   setStopName: (stopId: string, name: string) => void;
   removeStop: (stopId: string) => void;
   reorder: (dayId: string, fromIdx: number, toIdx: number) => void;
   setMode: (segId: string, mode: Mode) => void;
   runNeeded: (needed: SegmentRequest[]) => void;
   retrySegment: (segId: string) => void;
-  completeFreehand: (points: Position[], mode: Mode) => void;
+  completeFreehand: (points: Position[]) => void;
   moveVertex: (segId: string, vertexIndex: number, position: Position, commit: boolean) => void;
   addDay: () => void;
   removeDay: (dayId: string) => void;
@@ -187,7 +185,6 @@ export const useTripStore = create<TripState>((set, get) => ({
     status: "idle",
     map: null,
     tool: "select",
-    currentMode: "driving",
     activeDayId: null,
     selectedStopId: null,
     selectedSegId: null,
@@ -223,7 +220,6 @@ export const useTripStore = create<TripState>((set, get) => ({
 
     setTool: (tool) => set({ tool, selectedStopId: null, selectedSegId: null, mapUnlocked: false }),
 
-    setCurrentMode: (mode) => set({ currentMode: mode }),
     setMapUnlocked: (v) => set({ mapUnlocked: v }),
     setActiveDayId: (dayId) => set({ activeDayId: dayId }),
 
@@ -399,11 +395,11 @@ export const useTripStore = create<TripState>((set, get) => ({
       get().runNeeded([segmentRequest(seg)]);
     },
 
-    completeFreehand: (points, mode) => {
+    completeFreehand: (points) => {
       const { trip, activeDayId } = get();
       if (!trip) return;
       pushHistory(trip.data);
-      const res = opCompleteFreehand(trip.data, points, mode, activeDayId ?? undefined);
+      const res = opCompleteFreehand(trip.data, points, activeDayId ?? undefined);
       set({ trip: { ...trip, data: res.data } });
       scheduleSave(get);
     },

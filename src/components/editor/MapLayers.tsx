@@ -3,16 +3,27 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { AmapMap, AmapOverlay } from "@/lib/mapTypes";
 import type { Position, TripData, TripSegment } from "@/lib/types";
+import { MODE_ICON, MODE_LABEL } from "@/lib/types";
 import { useTripStore } from "@/lib/useTripStore";
 import { daySegments, dayStops } from "@/lib/trip/ops";
+import { pointAtFraction } from "@/lib/trip/geo";
 import { setSegmentLine } from "@/lib/mapOverlays";
 import { useIsMobile } from "@/hooks/useIsMobile";
 
 const EMPTY_DATA: TripData = { days: [], stops: [], segments: [] };
 const COLORS = { driving: "#2563eb", walking: "#059669", cycling: "#ea580c", transit: "#0891b2", freehand: "#71717a", snapped: "#7c3aed", degraded: "#d97706" };
+/** 线段方式标签的显示缩放阈值：低于此级别线段密集，隐藏标签避免重叠。 */
+const LABEL_ZOOM_THRESHOLD = 12;
 
 function stopContent(label: string, selected: boolean) {
   return `<span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:9999px;border:2px solid ${selected ? "#0f766e" : "#059669"};background:${selected ? "#0d9488" : "#fff"};color:${selected ? "#fff" : "#065f46"};font:600 11px Arial">${label}</span>`;
+}
+
+/** 线段方式标签：图标+文字徽章，用色与线段一致（降级段标「已降级」）；手绘/吸附段不标。 */
+function segmentLabelContent(segment: TripSegment): string {
+  const text = segment.degraded ? "已降级" : `${MODE_ICON[segment.mode]} ${MODE_LABEL[segment.mode]}`;
+  const color = segment.degraded ? COLORS.degraded : COLORS[segment.mode];
+  return `<span style="display:inline-flex;align-items:center;padding:1px 7px;border-radius:9999px;border:1.5px solid ${color};background:#fff;color:#27272a;font:600 11px/1.6 system-ui,Arial;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.12)">${text}</span>`;
 }
 
 /** 段样式：降级（琥珀虚线）优先于手绘/吸附/出行方式的常规配色。 */
@@ -67,6 +78,7 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
   const activeDayId = useTripStore((s) => s.activeDayId);
   const linesRef = useRef<Map<string, AmapOverlay[]>>(new Map());
   const markersRef = useRef<Map<string, AmapOverlay>>(new Map());
+  const labelsRef = useRef<Map<string, AmapOverlay>>(new Map());
   /** overlay 归属的地图实例：map 实例变化（组件重挂载/StrictMode）时丢弃旧注册表，整图重建。 */
   const overlaysMapRef = useRef<AmapMap | null>(null);
   /** 用户手动拖拽过地图后不再自动 fit（本次会话），map 实例变化时重置。 */
@@ -87,6 +99,7 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
       overlaysMapRef.current = map;
       linesRef.current.clear();
       markersRef.current.clear();
+      labelsRef.current.clear();
       userInteractedRef.current = false;
       fittedDayRef.current = null;
     }
@@ -97,6 +110,11 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
         if (segmentIds.has(segId)) continue;
         map.remove(lines);
         linesRef.current.delete(segId);
+      }
+      for (const [segId, label] of labelsRef.current) {
+        if (segmentIds.has(segId)) continue;
+        map.remove(label);
+        labelsRef.current.delete(segId);
       }
       const stopIds = new Set(visibleStops.map((s) => s.id));
       for (const [stopId, marker] of markersRef.current) {
@@ -151,6 +169,44 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
         // 同上
       }
       linesRef.current.set(segment.id, lines);
+
+      // 方式标签（随线段增量同步）：仅交通方式与降级段标注，手绘/吸附段不标
+      const labelsVisible = map.getZoom() >= LABEL_ZOOM_THRESHOLD;
+      if (segment.kind !== "freehand" && segment.kind !== "snapped") {
+        const midpoint = pointAtFraction(segment.geometry.coordinates, 0.5);
+        const existingLabel = labelsRef.current.get(segment.id);
+        if (existingLabel) {
+          existingLabel.setPosition?.(midpoint);
+          existingLabel.setContent?.(segmentLabelContent(segment));
+        } else {
+          const label = new window.AMap!.Marker({
+            position: midpoint,
+            content: segmentLabelContent(segment),
+            anchor: "center",
+          });
+          label.on("click", () => {
+            lastOverlayClickAt = performance.now();
+            useTripStore.getState().selectSeg(segment.id);
+          });
+          label.setVisible?.(labelsVisible);
+          try {
+            map.add(label);
+          } catch {
+            // 同上
+          }
+          labelsRef.current.set(segment.id, label);
+        }
+      } else {
+        const stale = labelsRef.current.get(segment.id);
+        if (stale) {
+          try {
+            map.remove(stale);
+          } catch {
+            // 同上
+          }
+          labelsRef.current.delete(segment.id);
+        }
+      }
     }
 
     for (const stop of visibleStops) {
@@ -179,6 +235,19 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
     }
   }, [map, data, visibleStops, visibleSegments, dayId]);
 
+  // 缩放结束时按阈值切换全部标签显隐（不重建；创建时已按当前 zoom 设好初值）
+  useEffect(() => {
+    if (!map) return;
+    const apply = () => {
+      const visible = map.getZoom() >= LABEL_ZOOM_THRESHOLD;
+      for (const label of labelsRef.current.values()) {
+        label.setVisible?.(visible);
+      }
+    };
+    map.on("zoomend", apply);
+    return () => map.off("zoomend", apply);
+  }, [map]);
+
   // 选中态仅做指令式样式更新，不重建覆盖物
   useEffect(() => {
     if (!map) return;
@@ -206,7 +275,7 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
       if (performance.now() - lastOverlayClickAt < 60) return;
       const store = useTripStore.getState();
       if (store.tool === "add") {
-        const id = store.addStopAt({ name: "", lng: event.lnglat.getLng(), lat: event.lnglat.getLat(), mode: store.currentMode });
+        const id = store.addStopAt({ name: "", lng: event.lnglat.getLng(), lat: event.lnglat.getLat() });
         if (id) void autoNameStop(id, event.lnglat.getLng(), event.lnglat.getLat());
       } else {
         store.selectStop(null);

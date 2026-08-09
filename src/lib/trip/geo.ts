@@ -83,6 +83,29 @@ export function pathLengthM(points: Position[]): number {
   return total;
 }
 
+/** 折线上按累计路径长度比例取点（fraction ∈ [0,1]，线性插值），用于线段中点等定位。 */
+export function pointAtFraction(points: Position[], fraction: number): Position {
+  if (points.length === 0) return [0, 0];
+  if (points.length === 1) return points[0];
+  const target = pathLengthM(points) * Math.max(0, Math.min(1, fraction));
+  let acc = 0;
+  for (let i = 1; i < points.length; i++) {
+    const d = roughDistanceM(points[i - 1], points[i]);
+    const prev = points[i - 1];
+    const next = points[i];
+    if (d === 0) continue;
+    if (acc + d >= target) {
+      const t = (target - acc) / d;
+      return [
+        prev[0] + (next[0] - prev[0]) * t,
+        prev[1] + (next[1] - prev[1]) * t,
+      ];
+    }
+    acc += d;
+  }
+  return points[points.length - 1];
+}
+
 /** 均匀采样到不超过 maxPoints 个点（保留首尾）。 */
 export function uniformSample(coords: Position[], maxPoints: number): Position[] {
   if (coords.length <= maxPoints) return [...coords];

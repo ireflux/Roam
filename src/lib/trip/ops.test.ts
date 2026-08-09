@@ -20,6 +20,7 @@ import {
   segmentRequest,
   setSegmentMode,
   simplifyVertices,
+  suggestMode,
   updateSegmentVertex,
 } from "@/lib/trip/ops";
 import type { TripData, TripSegment, TripStop } from "@/lib/types";
@@ -36,7 +37,7 @@ function stop(id: string, order: number, name = id): TripStop {
 
 describe("addStop", () => {
   it("第一个站点不产生段", () => {
-    const r = addStop(emptyData(), { dayId: DAY, name: "A", lat: 1, lng: 1, mode: "driving" });
+    const r = addStop(emptyData(), { dayId: DAY, name: "A", lat: 1, lng: 1 });
     expect(r.data.stops).toHaveLength(1);
     expect(r.data.segments).toHaveLength(0);
     expect(r.needed).toHaveLength(0);
@@ -44,8 +45,8 @@ describe("addStop", () => {
 
   it("添加第二个站点产生 auto 段并请求路线", () => {
     let data = emptyData();
-    data = addStop(data, { dayId: DAY, name: "A", lat: 1, lng: 1, mode: "driving" }).data;
-    const r = addStop(data, { dayId: DAY, name: "B", lat: 2, lng: 2, mode: "driving" });
+    data = addStop(data, { dayId: DAY, name: "A", lat: 1, lng: 1 }).data;
+    const r = addStop(data, { dayId: DAY, name: "B", lat: 2, lng: 2 });
     expect(r.data.segments).toHaveLength(1);
     expect(r.needed).toHaveLength(1);
     expect(r.needed[0].segId).toBe(r.data.segments[0].id);
@@ -55,14 +56,32 @@ describe("addStop", () => {
   });
 
   it("addedId 直接返回新增站点 id（不依赖坐标反查）", () => {
-    const r = addStop(emptyData(), { dayId: DAY, name: "A", lat: 1, lng: 1, mode: "driving" });
+    const r = addStop(emptyData(), { dayId: DAY, name: "A", lat: 1, lng: 1 });
     expect(r.addedId).toBe(r.data.stops[0].id);
   });
 
   it("保证 day 存在", () => {
-    const r = addStop({ days: [], stops: [], segments: [] }, { dayId: "x", name: "A", lat: 0, lng: 0, mode: "walking" });
+    const r = addStop({ days: [], stops: [], segments: [] }, { dayId: "x", name: "A", lat: 0, lng: 0 });
     expect(r.data.days).toHaveLength(1);
     expect(r.data.days[0].id).toBe("x");
+  });
+
+  it("未指定方式时按距离启发式自动判型", () => {
+    const near = addStop(emptyData(), { dayId: DAY, name: "A", lat: 31.23, lng: 121.47 }).data;
+    const r = addStop(near, { dayId: DAY, name: "B", lat: 31.231, lng: 121.471 });
+    expect(r.data.segments[0].mode).toBe("walking");
+    expect(r.needed[0].mode).toBe("walking");
+  });
+});
+
+describe("suggestMode 距离阈值", () => {
+  it("边界映射：<1.5km 步行 / 1.5–8km 骑行 / >8km 驾车", () => {
+    expect(suggestMode(0)).toBe("walking");
+    expect(suggestMode(1499)).toBe("walking");
+    expect(suggestMode(1500)).toBe("cycling");
+    expect(suggestMode(8000)).toBe("cycling");
+    expect(suggestMode(8001)).toBe("driving");
+    expect(suggestMode(1_000_000)).toBe("driving");
   });
 });
 
@@ -338,6 +357,14 @@ describe("applyRoute / applyFallbackLine", () => {
 });
 
 describe("completeFreehand", () => {
+  it("方式按绘制路径总长启发式标注（仅标签）", () => {
+    const data = emptyData();
+    const short = completeFreehand(data, [[0, 0], [0.001, 0.001]]);
+    expect(short.data.segments[0].mode).toBe("walking");
+    const long = completeFreehand(data, [[0, 0], [0.2, 0.2]]);
+    expect(long.data.segments[0].mode).toBe("driving");
+  });
+
   it("两端都吸附已有站点时不新增站点", () => {
     const a = stop("a", 0);
     const b = stop("b", 1);
@@ -348,7 +375,7 @@ describe("completeFreehand", () => {
     };
     const nearA: [number, number] = [a.lng + 0.0005, a.lat];
     const nearB: [number, number] = [b.lng - 0.0005, b.lat];
-    const r = completeFreehand(data, [nearA, [0.8, 0.8], nearB], "walking");
+    const r = completeFreehand(data, [nearA, [0.8, 0.8], nearB]);
     expect(r.data.stops).toHaveLength(2);
     expect(r.data.segments).toHaveLength(1);
     expect(r.data.segments[0].fromStop).toBe("a");
@@ -365,7 +392,7 @@ describe("completeFreehand", () => {
       segments: [],
     };
     const far: [number, number] = [10, 10];
-    const r = completeFreehand(data, [[a.lng + 0.0005, a.lat], [0.5, 0.5], far], "walking");
+    const r = completeFreehand(data, [[a.lng + 0.0005, a.lat], [0.5, 0.5], far]);
     expect(r.data.stops).toHaveLength(2);
     expect(r.data.segments).toHaveLength(1);
     expect(r.data.stops.find((s) => s.id === "a")).toBeTruthy();
@@ -377,14 +404,14 @@ describe("completeFreehand", () => {
 
   it("点数不足 2 时不产生数据", () => {
     const data = emptyData();
-    const r = completeFreehand(data, [[1, 1]], "driving");
+    const r = completeFreehand(data, [[1, 1]]);
     expect(r.data).toBe(data);
   });
 
   it("手绘长线会被压缩，保留首尾", () => {
     const data = emptyData();
     const dense: [number, number][] = Array.from({ length: 5_000 }, (_, i) => [i * 0.0001, 0.0001 * i] as [number, number]);
-    const r = completeFreehand(data, dense, "walking");
+    const r = completeFreehand(data, dense);
     const coords = r.data.segments[0].geometry.coordinates;
     expect(coords.length).toBeLessThan(dense.length);
     expect(coords[0]).toEqual([0, 0]);
@@ -406,7 +433,7 @@ describe("completeFreehand", () => {
       [a.lng + 0.002, a.lat - 0.001],
       [a.lng, a.lat],
     ];
-    const r = completeFreehand(data, loop, "walking");
+    const r = completeFreehand(data, loop);
     expect(r.changed).toBe(true);
     expect(r.data.segments).toHaveLength(1);
     expect(r.data.segments[0].fromStop).toBe("a");
@@ -427,7 +454,7 @@ describe("completeFreehand", () => {
       [a.lng + 0.0003, a.lat + 0.0002],
       [a.lng, a.lat],
     ];
-    const r = completeFreehand(data, jitter, "walking");
+    const r = completeFreehand(data, jitter);
     expect(r.changed).toBe(false);
     expect(r.data).toBe(data);
     expect(r.data.segments).toHaveLength(0);
@@ -518,7 +545,7 @@ describe("simplifyVertices", () => {
 
 describe("changed 标志", () => {
   it("addStop 产生变更", () => {
-    const r = addStop(emptyData(), { dayId: DAY, name: "A", lat: 1, lng: 1, mode: "driving" });
+    const r = addStop(emptyData(), { dayId: DAY, name: "A", lat: 1, lng: 1 });
     expect(r.changed).toBe(true);
   });
 
@@ -531,8 +558,8 @@ describe("changed 标志", () => {
 
   it("reorderStops 同位置是 no-op", () => {
     let data = emptyData();
-    data = addStop(data, { dayId: DAY, name: "A", lat: 1, lng: 1, mode: "driving" }).data;
-    data = addStop(data, { dayId: DAY, name: "B", lat: 2, lng: 2, mode: "driving" }).data;
+    data = addStop(data, { dayId: DAY, name: "A", lat: 1, lng: 1 }).data;
+    data = addStop(data, { dayId: DAY, name: "B", lat: 2, lng: 2 }).data;
     const r = reorderStops(data, DAY, 1, 1);
     expect(r.changed).toBe(false);
     expect(r.data).toBe(data);
@@ -662,7 +689,7 @@ describe("completeFreehand 的天归属", () => {
       stops: [],
       segments: [],
     };
-    const r = completeFreehand(data, [[0, 0], [1, 1]], "walking", "d2");
+    const r = completeFreehand(data, [[0, 0], [1, 1]], "d2");
     expect(r.data.stops.map((s) => s.dayId)).toEqual(["d2", "d2"]);
   });
 
@@ -675,7 +702,7 @@ describe("completeFreehand 的天归属", () => {
       stops: [],
       segments: [],
     };
-    const r = completeFreehand(data, [[0, 0], [1, 1]], "walking");
+    const r = completeFreehand(data, [[0, 0], [1, 1]]);
     expect(r.data.stops.map((s) => s.dayId)).toEqual(["d1", "d1"]);
   });
 
@@ -690,7 +717,7 @@ describe("completeFreehand 的天归属", () => {
       segments: [],
     };
     // 首端吸附 d2 的站点 b，即使 fallback 是 d1 也落入 d2
-    const r = completeFreehand(data, [[b.lng + 0.0005, b.lat], [5, 5]], "cycling", "d1");
+    const r = completeFreehand(data, [[b.lng + 0.0005, b.lat], [5, 5]], "d1");
     expect(r.data.stops.find((s) => s.name === "绘制终点")!.dayId).toBe("d2");
   });
 });

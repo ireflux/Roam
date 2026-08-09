@@ -38,7 +38,6 @@ export default function Editor({ trip }: { trip: Trip }) {
   const activeDayId = useTripStore((s) => s.activeDayId);
   const setActiveDayId = useTripStore((s) => s.setActiveDayId);
 
-  const [trafficOn, setTrafficOn] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [toast, setToast] = useState<{ key: number; text: string; action?: { label: string; onActivate: () => void } } | null>(null);
   const mobile = useIsMobile();
@@ -61,7 +60,7 @@ export default function Editor({ trip }: { trip: Trip }) {
   const onDrawCommit = useCallback(
     (points: Position[]) => {
       const s = useTripStore.getState();
-      s.completeFreehand(points, s.currentMode);
+      s.completeFreehand(points);
       onboarding.markHintSeen("draw");
       setToast((t) => ({ key: (t?.key ?? 0) + 1, text: "已绘制一条路段" }));
     },
@@ -79,7 +78,7 @@ export default function Editor({ trip }: { trip: Trip }) {
   useVertexSnap(map, tool === "snap", data, selectedSegId, onVertexMove);
 
   const pickStop = useCallback((name: string, lng: number, lat: number) => {
-    useTripStore.getState().addStopAt({ name, lat, lng, mode: useTripStore.getState().currentMode });
+    useTripStore.getState().addStopAt({ name, lat, lng });
   }, []);
 
   const locateStop = useCallback(
@@ -115,8 +114,6 @@ export default function Editor({ trip }: { trip: Trip }) {
           trip={storeTrip ?? trip}
           status={status}
           mobile={mobile}
-          trafficOn={trafficOn}
-          onTrafficToggle={() => setTrafficOn((v) => !v)}
           failedSegs={failedSegs}
           onBack={() => router.push("/")}
           searchFocused={searchFocused}
@@ -222,8 +219,6 @@ interface ToolbarProps {
   trip: Trip;
   status: string;
   mobile: boolean;
-  trafficOn: boolean;
-  onTrafficToggle: () => void;
   failedSegs: { id: string; fromStop: string; toStop: string }[];
   searchFocused: boolean;
   onSearchFocus: (v: boolean) => void;
@@ -231,10 +226,8 @@ interface ToolbarProps {
   onBack: () => void;
 }
 
-function Toolbar({ trip, status, mobile, trafficOn, onTrafficToggle, failedSegs, searchFocused, onSearchFocus, onPick, onBack }: ToolbarProps) {
+function Toolbar({ trip, status, mobile, failedSegs, searchFocused, onSearchFocus, onPick, onBack }: ToolbarProps) {
   const tool = useTripStore((s) => s.tool);
-  const currentMode = useTripStore((s) => s.currentMode);
-  const [modeMenuOpen, setModeMenuOpen] = useState(false);
 
   if (mobile) {
     return (
@@ -254,41 +247,6 @@ function Toolbar({ trip, status, mobile, trafficOn, onTrafficToggle, failedSegs,
                 </button>
               ))}
             </div>
-            <div className="relative">
-              <button
-                onClick={() => setModeMenuOpen((v) => !v)}
-                title="默认交通方式"
-                className="rounded-full bg-white px-3 py-2.5 text-base shadow hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-              >
-                {MODE_ICON[currentMode]}
-              </button>
-              {modeMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setModeMenuOpen(false)} />
-                  <div className="absolute left-1/2 top-12 z-20 flex -translate-x-1/2 flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-zinc-900">
-                    {MODES.map((m) => (
-                      <button
-                        key={m}
-                        onClick={() => {
-                          useTripStore.getState().setCurrentMode(m);
-                          setModeMenuOpen(false);
-                        }}
-                        className={`whitespace-nowrap px-4 py-2.5 text-left text-sm ${currentMode === m ? "bg-emerald-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
-                      >
-                        {MODE_ICON[m]} {MODE_LABEL[m]}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-            <button
-              onClick={onTrafficToggle}
-              title="实时路况"
-              className={`rounded-full px-3 py-2.5 text-base shadow ${trafficOn ? "bg-emerald-600 text-white" : "bg-white hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800"}`}
-            >
-              🚦
-            </button>
           </div>
         )}
         {searchFocused ? (
@@ -313,25 +271,7 @@ function Toolbar({ trip, status, mobile, trafficOn, onTrafficToggle, failedSegs,
           >
             {t.icon}
           </button>
-        ))}
-        <div className="my-1.5 w-px bg-zinc-200 dark:bg-zinc-700" />
-        {MODES.map((m) => (
-          <button
-            key={m}
-            title={MODE_LABEL[m]}
-            onClick={() => useTripStore.getState().setCurrentMode(m)}
-            className={`px-3 py-2 text-sm ${currentMode === m ? "bg-emerald-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
-          >
-            {MODE_ICON[m]}
-          </button>
-        ))}
-        <button
-          title="实时路况"
-          onClick={onTrafficToggle}
-          className={`px-3 py-2 text-sm ${trafficOn ? "bg-emerald-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
-        >
-          🚦
-        </button>
+))}
       </div>
       <div className="min-w-[180px] flex-1 sm:max-w-xs">
         <SearchBox onPick={onPick} />
