@@ -1,4 +1,4 @@
-import type { NewTripInput, Trip } from "@/lib/types";
+import type { NewTripInput, Trip, TripData } from "@/lib/types";
 import { toTrip, type TripRepo } from "@/lib/db/repo";
 
 export class MemoryTripRepo implements TripRepo {
@@ -34,13 +34,15 @@ export class MemoryTripRepo implements TripRepo {
   async update(
     id: string,
     ownerId: string,
-    patch: { data?: unknown; title?: string },
+    patch: { data?: TripData; title?: string; expectedUpdatedAt?: string },
   ): Promise<Trip | null> {
     const trip = this.trips.get(id);
     if (!trip || trip.ownerId !== ownerId) return null;
+    // 内存实现存 ISO 字符串，直接字符串比较；不匹配视为并发冲突，返回 null。
+    if (patch.expectedUpdatedAt !== undefined && trip.updatedAt !== patch.expectedUpdatedAt) return null;
     const updated: Trip = {
       ...trip,
-      ...(patch.data !== undefined ? { data: patch.data as Trip["data"] } : {}),
+      ...(patch.data !== undefined ? { data: patch.data } : {}),
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       updatedAt: new Date().toISOString(),
     };

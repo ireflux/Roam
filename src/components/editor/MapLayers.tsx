@@ -140,37 +140,37 @@ export default function MapLayers({ map, dragLocked }: MapLayersProps) {
           existing[i]?.setPath?.(part.coordinates);
           existing[i]?.setOptions?.(segmentStyle(segment, part.kind));
         });
-        continue;
-      }
-      // 新建（或子段数量变化后的重建）
-      if (existing) {
+      } else {
+        // 新建（或子段数量变化后的重建）
+        if (existing) {
+          try {
+            map.remove(existing);
+          } catch {
+            // 同上
+          }
+          linesRef.current.delete(segment.id);
+        }
+        const lines = parts.map((part) => new window.AMap!.Polyline({
+          path: part.coordinates,
+          ...segmentStyle(segment, part.kind),
+          lineJoin: "round",
+        }));
+        for (const line of lines.slice(0, 1)) setSegmentLine(map, segment.id, line);
+        for (const line of lines) {
+          line.on("click", () => {
+            lastOverlayClickAt = performance.now();
+            useTripStore.getState().selectSeg(segment.id);
+          });
+        }
         try {
-          map.remove(existing);
+          map.add(lines);
         } catch {
           // 同上
         }
-        linesRef.current.delete(segment.id);
+        linesRef.current.set(segment.id, lines);
       }
-      const lines = parts.map((part) => new window.AMap!.Polyline({
-        path: part.coordinates,
-        ...segmentStyle(segment, part.kind),
-        lineJoin: "round",
-      }));
-      for (const line of lines.slice(0, 1)) setSegmentLine(map, segment.id, line);
-      for (const line of lines) {
-        line.on("click", () => {
-          lastOverlayClickAt = performance.now();
-          useTripStore.getState().selectSeg(segment.id);
-        });
-      }
-      try {
-        map.add(lines);
-      } catch {
-        // 同上
-      }
-      linesRef.current.set(segment.id, lines);
 
-      // 方式标签（随线段增量同步）：仅交通方式与降级段标注，手绘/吸附段不标
+      // 方式标签（无条件同步，随线段增量更新）：仅交通方式与降级段标注，手绘/吸附段不标
       const labelsVisible = map.getZoom() >= LABEL_ZOOM_THRESHOLD;
       if (segment.kind !== "freehand" && segment.kind !== "snapped") {
         const midpoint = pointAtFraction(segment.geometry.coordinates, 0.5);

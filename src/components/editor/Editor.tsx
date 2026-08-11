@@ -17,6 +17,7 @@ import { useOnboarding } from "@/hooks/useOnboarding";
 import TipBanner from "@/components/ui/TipBanner";
 import WelcomeOverlay from "@/components/ui/WelcomeOverlay";
 import ShareButton from "@/components/ui/ShareButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
@@ -37,6 +38,8 @@ export default function Editor({ trip }: { trip: Trip }) {
   const selectedSegId = useTripStore((s) => s.selectedSegId);
   const activeDayId = useTripStore((s) => s.activeDayId);
   const setActiveDayId = useTripStore((s) => s.setActiveDayId);
+  const conflict = useTripStore((s) => s.conflict);
+  const resolveConflict = useTripStore((s) => s.resolveConflict);
 
   const [searchFocused, setSearchFocused] = useState(false);
   const [toast, setToast] = useState<{ key: number; text: string; action?: { label: string; onActivate: () => void } } | null>(null);
@@ -46,6 +49,20 @@ export default function Editor({ trip }: { trip: Trip }) {
   useEffect(() => {
     load(trip);
   }, [trip, load]);
+
+  // 关页/切后台前立即冲刷防抖保存，避免 1.5s 防抖窗口内的编辑丢失
+  useEffect(() => {
+    const flush = () => useTripStore.getState().flushNow();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   const data = storeTrip?.data ?? trip.data;
   const dayId = activeDayId ?? data.days[0]?.id ?? "";
@@ -208,6 +225,19 @@ export default function Editor({ trip }: { trip: Trip }) {
 
         {/* 首次进入欢迎层 */}
         {!onboarding.l0Done && <WelcomeOverlay onDone={onboarding.finishL0} />}
+
+        {/* 保存冲突：其他窗口/设备已修改，需选择保留哪个版本 */}
+        {conflict && (
+          <ConfirmDialog
+            open
+            title="内容已在其他窗口被修改"
+            message="此路线已在其他窗口或设备上被编辑。选择保留哪个版本？"
+            confirmText="以本地为准（覆盖）"
+            cancelText="以服务器为准（放弃本地修改）"
+            onConfirm={() => void resolveConflict("local")}
+            onCancel={() => void resolveConflict("server")}
+          />
+        )}
       </div>
     </div>
   );

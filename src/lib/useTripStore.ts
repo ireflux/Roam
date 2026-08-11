@@ -26,13 +26,15 @@ import {
   type SegmentRequest,
 } from "@/lib/trip/ops";
 
-export type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error" | "offline";
+export type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error" | "offline" | "conflict";
 export type Tool = "select" | "add" | "draw" | "snap";
 export type SegState = "pending" | "ok" | "error";
 
 interface TripState {
   trip: Trip | null;
   status: SaveStatus;
+  /** PATCH 409 冲突：服务端版本时间戳；非 null 时保存被挂起，需 resolveConflict 解决。 */
+  conflict: { serverUpdatedAt: string } | null;
   map: AmapMap | null;
   tool: Tool;
   /** 当前选中的天标签（编辑器地图渲染与新增归属共用）。null = 未显式选择，回落 days[0]。 */
@@ -75,6 +77,10 @@ interface TripState {
   undoDelete: () => boolean;
 
   save: () => Promise<void>;
+  /** 解决保存冲突：local = 以本地为准强制覆盖；server = 放弃本地修改，拉取服务器版本。 */
+  resolveConflict: (choice: "local" | "server") => Promise<void>;
+  /** 立即保存（跳过防抖）。 */
+  flushNow: () => void;
 }
 
 const UNDO_LIMIT = 50;
@@ -95,6 +101,8 @@ let pendingDelete: { snapshot: TripData; mark: number } | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let saveInFlight = false;
 let saveTriggeredDuringSave = false;
+/** 保存代际令牌：load() 切换行程时自增，作废在途保存的 finally/回调，防止跨行程状态污染。 */
+let saveToken = 0;
 
 function clearSaveTimer() {
   if (saveTimer) {
@@ -129,28 +137,48 @@ function scheduleSave(get: () => TripState, delay = SAVE_DEBOUNCE_MS) {
 }
 
 /** 保存循环：并发触发只排队一次；完成后若期间有新变更（dirty 或排队标志）则立即补存。 */
-async function flushSave(get: () => TripState): Promise<void> {
+async function flushSave(get: () => TripState, force = false): Promise<void> {
+  // 冲突未解决不重复保存（除非显式 force 覆盖）
+  if (get().conflict && !force) return;
   if (saveInFlight) {
     saveTriggeredDuringSave = true;
     return;
   }
+  const token = ++saveToken;
   saveInFlight = true;
   saveTriggeredDuringSave = false;
+  let tripId: string | undefined;
   try {
     const { trip } = get();
     if (!trip) return;
+    tripId = trip.id;
     const payload = trip.data;
     const title = trip.title ?? "";
     useTripStore.setState({ status: "saving" });
     const res = await fetch(`/api/trips/${trip.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data: payload, title }),
+      body: JSON.stringify({
+        data: payload,
+        title,
+        expectedUpdatedAt: trip.updatedAt,
+        ...(force ? { force: true } : {}),
+      }),
     });
+    if (res.status === 409) {
+      // 冲突：不抛错、不补存，交由 resolveConflict 决策
+      const json = (await res.json()) as { error?: string; serverUpdatedAt?: string };
+      const serverUpdatedAt = json.serverUpdatedAt ?? "";
+      useTripStore.setState((s) =>
+        s.trip?.id === tripId ? { status: "conflict", conflict: { serverUpdatedAt } } : {},
+      );
+      return;
+    }
     if (!res.ok) throw new Error(`save failed: ${res.status}`);
     const { updatedAt } = await res.json();
     useTripStore.setState((s) => {
-      if (!s.trip) return { status: "saved" };
+      // 跨行程守卫：保存期间若已切换到其他行程，跳过状态更新
+      if (!s.trip || s.trip.id !== tripId) return {};
       const changedDuringSave = s.trip.data !== payload;
       return {
         status: changedDuringSave ? "dirty" : "saved",
@@ -158,10 +186,11 @@ async function flushSave(get: () => TripState): Promise<void> {
       };
     });
   } catch {
-    useTripStore.setState({ status: "error" });
+    useTripStore.setState((s) => (s.trip?.id === tripId ? { status: "error" } : {}));
   } finally {
-    saveInFlight = false;
-    if (saveTriggeredDuringSave) {
+    // 仅当本次保存仍是「最新一次」时才清 in-flight 标志，防止旧保存的 finally 清掉新保存的标志
+    if (token === saveToken) saveInFlight = false;
+    if (saveTriggeredDuringSave && !get().conflict) {
       saveTriggeredDuringSave = false;
       void flushSave(get);
     }
@@ -183,6 +212,7 @@ function isRequestCurrent(get: () => TripState, req: SegmentRequest): boolean {
 export const useTripStore = create<TripState>((set, get) => ({
     trip: null,
     status: "idle",
+    conflict: null,
     map: null,
     tool: "select",
     activeDayId: null,
@@ -195,6 +225,11 @@ export const useTripStore = create<TripState>((set, get) => ({
 
     load: (trip) => {
       clearSaveTimer();
+      // 跨行程切换：作废在途保存并重置保存状态机，防止旧行程的保存回调/补存污染新行程
+      saveToken += 1;
+      saveInFlight = false;
+      saveTriggeredDuringSave = false;
+      pendingDelete = null;
       undoStack.length = 0;
       redoStack.length = 0;
       // 旧数据兼容（见 ops.ts）：补齐天名 + 修复历史重复段 id
@@ -207,6 +242,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       set({
         trip: hydrated,
         status: "idle",
+        conflict: null,
         activeDayId: null,
         segState: {},
         selectedStopId: null,
@@ -517,4 +553,30 @@ export const useTripStore = create<TripState>((set, get) => ({
     },
 
     save: () => flushSave(get),
+
+    resolveConflict: async (choice) => {
+      const { trip } = get();
+      if (!trip) return;
+      if (choice === "local") {
+        // 以本地为准：清除冲突后强制覆盖保存（force 跳过服务端 updatedAt 校验）
+        set({ conflict: null });
+        await flushSave(get, true);
+        return;
+      }
+      // 以服务器为准：放弃本地修改，拉取服务器版本
+      set({ conflict: null, status: "idle" });
+      try {
+        const res = await fetch(`/api/trips/${trip.id}`);
+        if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+        const fresh = (await res.json()) as Trip;
+        get().load(fresh);
+      } catch {
+        set({ status: "error" });
+      }
+    },
+
+    flushNow: () => {
+      clearSaveTimer();
+      void flushSave(get);
+    },
   }));

@@ -25,6 +25,7 @@ type AmapTransitResponse = {
 };
 type AmapRegeoResponse = {
   status?: string;
+  info?: string;
   regeocode?: {
     addressComponent?: { city?: string[] | string; adcode?: string; province?: string };
   };
@@ -49,11 +50,17 @@ function key(): string {
 }
 
 // 进程内城市缓存（regeo 一次后可复用），key 近似到 ~0.1m 精度。
-const cityCache = new Map<string, string>();
+// 只缓存成功响应（status === "1"）；错误响应抛错且不写入，避免永久负缓存。
+const CITY_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+const CITY_CACHE_MAX = 2_000;
+const cityCache = new Map<string, { city: string; ts: number }>();
 async function reverseCity(pos: Position): Promise<string> {
   const cacheKey = `${pos[0].toFixed(6)},${pos[1].toFixed(6)}`;
   const hit = cityCache.get(cacheKey);
-  if (hit) return hit;
+  if (hit) {
+    if (Date.now() - hit.ts <= CITY_CACHE_TTL_MS) return hit.city;
+    cityCache.delete(cacheKey);
+  }
 
   const url = new URL(`${BASE}/v3/geocode/regeo`);
   url.searchParams.set("key", key());
@@ -66,11 +73,20 @@ async function reverseCity(pos: Position): Promise<string> {
   }
   if (!response.ok) throw new RoutingError(`城市识别服务返回 ${response.status}`, "upstream");
   const data = await response.json() as AmapRegeoResponse;
+  if (data.status !== "1") {
+    // 上游业务错误（如 key 无效/配额耗尽）：抛错且不缓存，下次请求重试。
+    throw new RoutingError(data.info ?? "城市识别服务返回异常", "upstream");
+  }
   const component = data.regeocode?.addressComponent;
   // 直辖市可能在 city 数组里；取其一后回退到 adcode（6 位行政区划码，高德公交/生活接口均可接受）
   const city = Array.isArray(component?.city) ? component!.city[0] : component?.city;
   const resolved = city || component?.adcode || "";
-  cityCache.set(cacheKey, resolved);
+  // 合法的空结果（无 city 也无 adcode）也缓存（带 TTL），这不是错误。
+  cityCache.set(cacheKey, { city: resolved, ts: Date.now() });
+  if (cityCache.size > CITY_CACHE_MAX) {
+    const oldest = cityCache.keys().next().value as string;
+    cityCache.delete(oldest);
+  }
   return resolved;
 }
 

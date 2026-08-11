@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, render } from "@testing-library/react";
 import MapLayers from "./MapLayers";
 import { useTripStore } from "@/lib/useTripStore";
 import type { AmapMap } from "@/lib/mapTypes";
@@ -10,7 +10,13 @@ import type { Trip, TripSegment } from "@/lib/types";
 function makeEnv(initialZoom = 12) {
   let zoom = initialZoom;
   const added: unknown[] = [];
-  const markers: Array<{ content: string; position: [number, number]; setVisible: ReturnType<typeof vi.fn> }> = [];
+  const markers: Array<{
+    content: string;
+    position: [number, number];
+    setVisible: ReturnType<typeof vi.fn>;
+    setPosition: ReturnType<typeof vi.fn>;
+    setContent: ReturnType<typeof vi.fn>;
+  }> = [];
   const handlers: Record<string, () => void> = {};
   class Marker {
     content: string;
@@ -93,6 +99,10 @@ function modeLabel(markers: ReturnType<typeof makeEnv>["markers"]): (typeof mark
 }
 
 describe("MapLayers 线段方式标签", () => {
+  // vitest 未开启 globals，RTL 自动 cleanup 不生效；不卸载会导致前序测试的
+  // 残留组件在后续 load() 时用最新 window.AMap 重建覆盖物，污染 markers 断言。
+  afterEach(() => cleanup());
+
   it("zoom 达阈值时为 auto 段创建中点标签（含方式名，位于路径中部）", () => {
     const env = makeEnv();
     useTripStore.getState().load(tripWith(seg()));
@@ -131,5 +141,30 @@ describe("MapLayers 线段方式标签", () => {
     env.setZoom(13);
     env.zoomend();
     expect(label.setVisible).toHaveBeenLastCalledWith(true);
+  });
+
+  it("线段坐标更新后标签位置与内容同步（增量更新不重建）", () => {
+    const env = makeEnv();
+    useTripStore.getState().load(tripWith(seg()));
+    render(<MapLayers map={env.map} dragLocked={false} />);
+    const label = modeLabel(env.markers)!;
+    expect(label).toBeTruthy();
+
+    // 更新 geometry 坐标（auto 段无 parts，子段数恒为 1，走增量更新分支）
+    const updated = tripWith(
+      seg({ geometry: { type: "LineString", coordinates: [[121.47, 31.23], [121.473, 31.232], [121.476, 31.234]] } }),
+    );
+    act(() => {
+      useTripStore.getState().load(updated);
+    });
+
+    // 标签未被重建：同一实例上调用 setPosition/setContent
+    expect(label.setPosition).toHaveBeenCalled();
+    expect(label.setContent).toHaveBeenCalled();
+    const lastPos = label.setPosition.mock.calls.at(-1)![0] as [number, number];
+    // 新中点位于新路径中部（≈ 中间顶点）
+    expect(lastPos[0]).toBeCloseTo(121.473, 5);
+    expect(lastPos[1]).toBeCloseTo(31.232, 5);
+    expect(label.setContent).toHaveBeenLastCalledWith(expect.stringContaining("骑行"));
   });
 });

@@ -1,9 +1,9 @@
 import type { TripData } from "@/lib/types";
 
-const MAX_DAYS = 60;
+const MAX_DAYS = 30;
 const MAX_STOPS = 500;
-const MAX_SEGMENTS = 500;
-const MAX_POINTS_PER_SEGMENT = 5_000;
+const MAX_SEGMENTS = 100;
+const MAX_POINTS_PER_SEGMENT = 2_500;
 
 function isPosition(value: unknown): value is [number, number] {
   return Array.isArray(value)
