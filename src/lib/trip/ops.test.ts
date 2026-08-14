@@ -18,9 +18,13 @@ import {
   reorderStops,
   repairSegmentIds,
   segmentRequest,
+  setDayDate,
   setSegmentMode,
   simplifyVertices,
   suggestMode,
+  summarizeDay,
+  summarizeTrip,
+  dayDensityWarnings,
   updateSegmentVertex,
 } from "@/lib/trip/ops";
 import type { TripData, TripSegment, TripStop } from "@/lib/types";
@@ -752,5 +756,90 @@ describe("addDay / nextActiveAfterDayRemoved（active 天协调）", () => {
   it("删除唯一天时 active 回退 null", () => {
     const days = [{ id: "d1", name: "第 1 天" }];
     expect(nextActiveAfterDayRemoved(days, "d1", "d1")).toBeNull();
+  });
+});
+describe("setDayDate", () => {
+  it("设置合法日期", () => {
+    const data = emptyData();
+    const r = setDayDate(data, DAY, "2026-08-14");
+    expect(r.changed).toBe(true);
+    expect(r.data.days[0].date).toBe("2026-08-14");
+  });
+
+  it("非法格式/非法日历日 no-op（原引用不变）", () => {
+    const data = emptyData();
+    expect(setDayDate(data, DAY, "2026-13-40").changed).toBe(false);
+    expect(setDayDate(data, DAY, "abc").changed).toBe(false);
+    expect(setDayDate(data, DAY, "2026-02-30").changed).toBe(false);
+    expect(setDayDate(data, DAY, "2026/08/14").changed).toBe(false);
+    expect(setDayDate(data, "missing", "2026-08-14").changed).toBe(false);
+  });
+
+  it("相同值 no-op", () => {
+    const data = setDayDate(emptyData(), DAY, "2026-08-14").data;
+    expect(setDayDate(data, DAY, "2026-08-14").changed).toBe(false);
+  });
+
+  it("null/空串清除日期", () => {
+    const data = setDayDate(emptyData(), DAY, "2026-08-14").data;
+    expect(setDayDate(data, DAY, null).data.days[0].date).toBeUndefined();
+    const r = setDayDate(emptyData(), DAY, null);
+    expect(r.changed).toBe(false);
+  });
+});
+
+describe("summarizeDay / summarizeTrip", () => {
+  function dataWithSegments() {
+    const base = addStop(addStop(emptyData(), { dayId: DAY, name: "A", lat: 1, lng: 1 }).data, { dayId: DAY, name: "B", lat: 2, lng: 2 }).data;
+    const seg = base.segments[0];
+    return {
+      ...base,
+      segments: base.segments.map((s) =>
+        s.id === seg.id ? { ...s, distanceM: 12_000, durationMin: 30 } : s,
+      ),
+    };
+  }
+
+  it("单日统计：站点/里程/时长来自段数据", () => {
+    const summary = summarizeDay(dataWithSegments(), DAY);
+    expect(summary.stops).toBe(2);
+    expect(summary.segments).toBe(1);
+    expect(summary.distanceM).toBe(12_000);
+    expect(summary.durationMin).toBe(30);
+  });
+
+  it("空天统计为 0", () => {
+    const summary = summarizeDay(emptyData(), DAY);
+    expect(summary).toEqual({ stops: 0, distanceM: 0, durationMin: 0, segments: 0 });
+  });
+
+  it("缺失 distanceM/durationMin 的段不计入", () => {
+    const base = dataWithSegments();
+    const summary = summarizeTrip(base);
+    expect(summary.days).toBe(1);
+    expect(summary.stops).toBe(2);
+    expect(summary.distanceM).toBe(12_000);
+  });
+});
+
+describe("dayDensityWarnings", () => {
+  const base = { stops: 0, distanceM: 0, durationMin: 0, segments: 0 };
+  it("阈值内不预警", () => {
+    expect(dayDensityWarnings({ ...base, stops: 8, distanceM: 150_000, durationMin: 300 }).warn).toBe(false);
+  });
+  it("里程超 150km 预警（优先里程文案）", () => {
+    const r = dayDensityWarnings({ ...base, stops: 9, distanceM: 160_000, durationMin: 400 });
+    expect(r.warn).toBe(true);
+    expect(r.reasons[0]).toContain("160 公里");
+  });
+  it("时长超 5h 预警", () => {
+    const r = dayDensityWarnings({ ...base, stops: 3, durationMin: 361 });
+    expect(r.warn).toBe(true);
+    expect(r.reasons[0]).toContain("6 小时");
+  });
+  it("站点超 8 个预警", () => {
+    const r = dayDensityWarnings({ ...base, stops: 9 });
+    expect(r.warn).toBe(true);
+    expect(r.reasons[0]).toContain("9 个地点");
   });
 });

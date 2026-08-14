@@ -43,6 +43,8 @@ export interface TripDay {
   id: string;
   name?: string;
   note?: string;
+  /** 该天绑定的日期（YYYY-MM-DD），可选；用于多日预报与展示。 */
+  date?: string;
 }
 
 export interface TripData {

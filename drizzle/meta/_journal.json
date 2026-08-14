@@ -22,6 +22,13 @@
       "when": 1786185153152,
       "tag": "0002_drop_trips_nickname",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786637349034,
+      "tag": "0003_opposite_vampiro",
+      "breakpoints": true
     }
   ]
 }

@@ -36,3 +36,37 @@ describe("MemoryTripRepo", () => {
     expect(await repo.getNickname("o1")).toBe("小明");
   });
 });
+
+describe("MemoryTripRepo 功能三：收藏 / 认领", () => {
+  const makeRepo = () => new MemoryTripRepo();
+
+  it("saveSharedTrip 去重 + getSavedTripId 往返", async () => {
+    const repo = makeRepo();
+    expect(await repo.getSavedTripId("u1", "shareA")).toBeNull();
+    await repo.saveSharedTrip("u1", "shareA", "trip-1");
+    await repo.saveSharedTrip("u1", "shareA", "trip-2");
+    expect(await repo.getSavedTripId("u1", "shareA")).toBe("trip-1");
+    expect(await repo.getSavedTripId("u1", "shareB")).toBeNull();
+    expect(await repo.getSavedTripId("u2", "shareA")).toBeNull();
+  });
+
+  it("claimTrips 过户匿名行程，同 owner 幂等", async () => {
+    const repo = makeRepo();
+    await repo.create({ ownerId: "anon-123", shareId: "s1" });
+    await repo.create({ ownerId: "anon-123", shareId: "s2" });
+    await repo.create({ ownerId: "u1", shareId: "s3" });
+    expect(await repo.claimTrips("anon-123", "u1")).toBe(2);
+    expect(await repo.claimTrips("anon-123", "u1")).toBe(0);
+    const owned = await repo.listByOwner("u1", 10);
+    expect(owned.map((t) => t.shareId).sort()).toEqual(["s1", "s2", "s3"]);
+  });
+
+  it("claimProfile 迁移匿名昵称（防主键冲突删旧行）", async () => {
+    const repo = makeRepo();
+    await repo.setNickname("anon-456", "游客甲");
+    await repo.setNickname("u2", "旧名");
+    await repo.claimProfile("anon-456", "u2");
+    expect(await repo.getNickname("anon-456")).toBeNull();
+    expect(await repo.getNickname("u2")).toBe("游客甲");
+  });
+});

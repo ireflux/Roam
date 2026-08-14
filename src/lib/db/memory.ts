@@ -4,6 +4,12 @@ import { toTrip, type TripRepo } from "@/lib/db/repo";
 export class MemoryTripRepo implements TripRepo {
   private trips = new Map<string, Trip>();
   private nicknames = new Map<string, string>();
+  private saved = new Set<string>();
+  private savedIds = new Map<string, string>();
+
+  private savedKey(ownerId: string, sourceShareId: string): string {
+    return `${ownerId}|${sourceShareId}`;
+  }
 
   async create(input: NewTripInput): Promise<Trip> {
     const now = new Date().toISOString();
@@ -78,5 +84,36 @@ export class MemoryTripRepo implements TripRepo {
 
   async getNickname(ownerId: string): Promise<string | null> {
     return this.nicknames.get(ownerId) ?? null;
+  }
+
+  async saveSharedTrip(ownerId: string, sourceShareId: string, tripId: string): Promise<void> {
+    const key = this.savedKey(ownerId, sourceShareId);
+    this.saved.add(key);
+    // 与 Neon 的 onConflictDoNothing 对齐：首次收藏生效，重复收藏保留原复制品
+    if (!this.savedIds.has(key)) this.savedIds.set(key, tripId);
+  }
+
+  async getSavedTripId(ownerId: string, sourceShareId: string): Promise<string | null> {
+    return this.savedIds.get(this.savedKey(ownerId, sourceShareId)) ?? null;
+  }
+
+  async claimTrips(fromOwnerId: string, toOwnerId: string): Promise<number> {
+    if (fromOwnerId === toOwnerId) return 0;
+    let count = 0;
+    for (const [id, trip] of this.trips) {
+      if (trip.ownerId === fromOwnerId) {
+        this.trips.set(id, { ...trip, ownerId: toOwnerId, updatedAt: new Date().toISOString() });
+        count++;
+      }
+    }
+    return count;
+  }
+
+  async claimProfile(fromOwnerId: string, toOwnerId: string): Promise<void> {
+    if (fromOwnerId === toOwnerId) return;
+    const nickname = this.nicknames.get(fromOwnerId);
+    if (!nickname) return;
+    this.nicknames.delete(fromOwnerId);
+    this.nicknames.set(toOwnerId, nickname);
   }
 }

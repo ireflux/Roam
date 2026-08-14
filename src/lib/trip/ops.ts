@@ -588,3 +588,84 @@ export function updateStop(
     stops: data.stops.map((s) => (s.id === stopId ? { ...s, ...patch } : s)),
   };
 }
+
+/** 设置/清除某天的日期（YYYY-MM-DD）；非法日期或相同值 no-op，返回原引用。 */
+export function setDayDate(data: TripData, dayId: string, date: string | null): OpsResult {
+  const target = data.days.find((d) => d.id === dayId);
+  if (!target) return result(data, data, []);
+  if (date === null || date === "") {
+    if (!target.date) return result(data, data, []);
+    return result(data, { ...data, days: data.days.map((d) => (d.id === dayId ? { ...d, date: undefined } : d)) }, []);
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return result(data, data, []);
+  const [y, m, day] = date.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1, day));
+  if (d.getUTCFullYear() !== y || d.getUTCMonth() !== m - 1 || d.getUTCDate() !== day) {
+    return result(data, data, []);
+  }
+  if (target.date === date) return result(data, data, []);
+  return result(data, { ...data, days: data.days.map((d) => (d.id === dayId ? { ...d, date } : d)) }, []);
+}
+
+/* ------------------------------- 统计与密度 ------------------------------- */
+
+export interface DaySummary {
+  stops: number;
+  distanceM: number;
+  durationMin: number;
+  segments: number;
+}
+
+export interface TripSummary extends DaySummary {
+  days: number;
+}
+
+function sumSegments(segments: TripSegment[]): { distanceM: number; durationMin: number } {
+  return segments.reduce(
+    (acc, s) => ({
+      distanceM: acc.distanceM + (s.distanceM ?? 0),
+      durationMin: acc.durationMin + (s.durationMin ?? 0),
+    }),
+    { distanceM: 0, durationMin: 0 },
+  );
+}
+
+/** 单日统计：站点数 / 里程 / 时长（来自段上的 distanceM/durationMin，缺失不计）。 */
+export function summarizeDay(data: TripData, dayId: string): DaySummary {
+  const segments = daySegments(data, dayId);
+  const { distanceM, durationMin } = sumSegments(segments);
+  return { stops: dayStops(data, dayId).length, distanceM, durationMin, segments: segments.length };
+}
+
+/** 行程总览统计。 */
+export function summarizeTrip(data: TripData): TripSummary {
+  const { distanceM, durationMin } = sumSegments(data.segments);
+  return {
+    days: data.days.length,
+    stops: data.stops.length,
+    distanceM,
+    durationMin,
+    segments: data.segments.length,
+  };
+}
+
+/** 密度预警阈值：单日任一命中即提示「可能太赶」。 */
+const WARN_MAX_DISTANCE_M = 150_000;
+const WARN_MAX_DURATION_MIN = 5 * 60;
+const WARN_MAX_STOPS = 8;
+
+/**
+ * 单日密度体检：返回是否偏赶及原因文案。
+ * 文案按最突出的指标给出一条（优先里程，其次时长，最后站点数），避免多条同时刷屏。
+ */
+export function dayDensityWarnings(summary: DaySummary): { warn: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  if (summary.distanceM > WARN_MAX_DISTANCE_M) {
+    reasons.push(`行程约 ${Math.round(summary.distanceM / 1000)} 公里，可能太赶`);
+  } else if (summary.durationMin > WARN_MAX_DURATION_MIN) {
+    reasons.push(`路上约 ${Math.round(summary.durationMin / 60)} 小时，可能太赶`);
+  } else if (summary.stops > WARN_MAX_STOPS) {
+    reasons.push(`安排了 ${summary.stops} 个地点，可能太赶`);
+  }
+  return { warn: reasons.length > 0, reasons };
+}

@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
-import { liveWeather, regeocode } from "@/lib/lbs";
+import { liveWeather, regeocode, weatherForecast } from "@/lib/lbs";
 
-// 实时天气：优先按 city（城市名或 adcode）查询；仅传 lng/lat 时先逆地理编码取城市。
-// 编辑器 / 分享页按「每日首个站点」坐标调用，服务端有 10 分钟缓存，避免高频访问消耗配额。
+// 天气接口：
+// - 无 date     → 实时天气（编辑器/分享页按「每日首个站点」坐标调用）
+// - 有 date     → 城市多日预报中匹配该日期的预报；超出预报窗口返回 forecast: null
+// 服务端缓存：实时 10 分钟、预报 1 小时，避免高频访问消耗配额。
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   let city = params.get("city")?.trim();
   const lng = Number(params.get("lng"));
   const lat = Number(params.get("lat"));
+  const date = params.get("date")?.trim() ?? "";
 
   try {
     if (!city) {
@@ -21,6 +24,20 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "no_city", message: "无法识别城市" }, { status: 422 });
       }
     }
+
+    // 有 date：查该日预报；预报窗口由高德返回的 casts 决定（通常今天起 3 天）
+    if (date) {
+      const forecast = await weatherForecast(city);
+      if (!forecast) {
+        return NextResponse.json({ error: "no_weather", message: "该城市暂无天气数据" }, { status: 422 });
+      }
+      const day = forecast.days.find((d) => d.date === date) ?? null;
+      return NextResponse.json(
+        { city: forecast.city, forecast: day ? { ...day, city: forecast.city } : null },
+        { headers: { "Cache-Control": "private, max-age=300" } },
+      );
+    }
+
     const live = await liveWeather(city);
     if (!live) return NextResponse.json({ error: "no_weather", message: "该城市暂无天气数据" }, { status: 422 });
     return NextResponse.json(

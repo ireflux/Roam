@@ -3,9 +3,11 @@
 import { useMemo, useRef, useState } from "react";
 import type { TripData, TripStop } from "@/lib/types";
 import { useTripStore } from "@/lib/useTripStore";
-import { useDayWeather, WeatherBadge } from "@/components/weather/useDayWeather";
+import { useDayWeather, WeatherBadge, weatherPoints } from "@/components/weather/useDayWeather";
 import { useTouchReorder } from "@/hooks/useTouchReorder";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { dayDensityWarnings, summarizeDay, summarizeTrip } from "@/lib/trip/ops";
+import { formatDistance, formatDuration } from "@/lib/trip/geo";
 
 interface TripSidebarContentProps {
   data: TripData;
@@ -39,7 +41,7 @@ export default function TripSidebarContent({
     () => data.stops.filter((s) => s.dayId === dayId).sort((a, b) => a.order - b.order),
     [data, dayId],
   );
-  const dayWeather = useDayWeather(data.stops);
+  const dayWeather = useDayWeather(weatherPoints(data));
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -48,10 +50,12 @@ export default function TripSidebarContent({
           <TripTitle />
           <DeleteTripButton />
         </div>
+        <TripOverview data={data} />
         {headerExtra}
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <DayTabs data={data} dayId={dayId} onDayChange={onDayChange} mobile={mobile} />
+        <DayStatsLine data={data} dayId={dayId} />
         <div className="mt-2 px-0.5">
           <WeatherBadge info={dayWeather[dayId]} />
         </div>
@@ -164,6 +168,39 @@ function DeleteTripButton() {
   );
 }
 
+/** 顶部总览：天数 / 站点 / 总里程 / 总时长（仅在有值时展示后者）。 */
+function TripOverview({ data }: { data: TripData }) {
+  const summary = useMemo(() => summarizeTrip(data), [data]);
+  const parts = [`${summary.days} 天`, `${summary.stops} 个地点`];
+  if (summary.distanceM > 0) parts.push(formatDistance(summary.distanceM));
+  if (summary.durationMin > 0) parts.push(`约 ${formatDuration(summary.durationMin)}`);
+  return (
+    <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500" aria-label="行程总览">
+      {parts.join(" · ")}
+    </p>
+  );
+}
+
+/** 当天统计 + 密度预警（太赶时琥珀提示）。 */
+function DayStatsLine({ data, dayId }: { data: TripData; dayId: string }) {
+  const summary = useMemo(() => summarizeDay(data, dayId), [data, dayId]);
+  const density = useMemo(() => dayDensityWarnings(summary), [summary]);
+  if (summary.stops === 0) return null;
+  const parts = [`${summary.stops} 站`];
+  if (summary.distanceM > 0) parts.push(formatDistance(summary.distanceM));
+  if (summary.durationMin > 0) parts.push(`约 ${formatDuration(summary.durationMin)}`);
+  return (
+    <div className="mt-2 px-0.5 text-xs">
+      <span className="text-zinc-400 dark:text-zinc-500">{parts.join(" · ")}</span>
+      {density.warn && (
+        <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+          ⚠ {density.reasons[0]}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /* ------------------------------- 天数 Tab ------------------------------- */
 
 function DayTabs({
@@ -178,6 +215,7 @@ function DayTabs({
   mobile: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [dateEditId, setDateEditId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const reorder = useTouchReorder(data.days, (from, to) => useTripStore.getState().reorderDays(from, to));
   const pendingDay = data.days.find((d) => d.id === pendingDeleteId);
@@ -235,6 +273,57 @@ function DayTabs({
           >
             {d.name ?? `第 ${i + 1} 天`}
             <span className="ml-1 text-xs opacity-70">{data.stops.filter((s) => s.dayId === d.id).length}</span>
+            {dateEditId === d.id ? (
+              <span
+                onPointerDown={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                className="ml-1 inline-flex items-center gap-1"
+              >
+                <input
+                  type="date"
+                  autoFocus
+                  defaultValue={d.date ?? ""}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") setDateEditId(null);
+                  }}
+                  onBlur={(e) => {
+                    setDateEditId(null);
+                    useTripStore.getState().setDayDate(d.id, e.target.value || null);
+                  }}
+                  className="w-[7.5rem] rounded-lg border border-emerald-500 px-1 py-0.5 text-xs outline-none dark:bg-zinc-900"
+                />
+                <button
+                  aria-label="清除日期"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    useTripStore.getState().setDayDate(d.id, null);
+                    setDateEditId(null);
+                  }}
+                  className="rounded-full px-1 text-zinc-400 hover:text-red-500"
+                >
+                  ✕
+                </button>
+              </span>
+            ) : (
+              <button
+                aria-label={`设置 ${d.name ?? `第 ${i + 1} 天`} 日期`}
+                title={d.date ? `日期：${d.date.slice(5).replace("-", ".")}，点击修改（用于天气预报）` : "设置日期（用于天气预报）"}
+                onPointerDown={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDateEditId(d.id);
+                }}
+                className={`ml-1 rounded-full px-1 text-xs leading-none ${
+                  d.id === dayId ? "text-white/80 hover:bg-white/20" : "text-zinc-400 hover:bg-emerald-50 hover:text-emerald-600 dark:text-zinc-500 dark:hover:bg-zinc-800"
+                }`}
+              >
+                {d.date ? d.date.slice(5).replace("-", ".") : "📅"}
+              </button>
+            )}
             {data.days.length > 1 && (
               <button
                 aria-label={`删除 ${d.name ?? `第 ${i + 1} 天`}`}

@@ -6,6 +6,7 @@ import "server-only";
 
 const TTL_REGEO_MS = 1000 * 60 * 60;
 const TTL_WEATHER_MS = 1000 * 60 * 10;
+const TTL_FORECAST_MS = 1000 * 60 * 60;
 const MAX_ENTRIES = 2_000;
 
 const store = new Map<string, { ts: number; value: unknown }>();
@@ -107,5 +108,64 @@ export async function liveWeather(city: string): Promise<LiveWeather | null> {
       windPower: live.windpower ?? "",
       humidity: live.humidity ?? "",
     };
+  });
+}
+
+export interface ForecastDay {
+  /** YYYY-MM-DD */
+  date: string;
+  dayWeather: string;
+  nightWeather: string;
+  tempHigh: number;
+  tempLow: number;
+}
+
+export interface ForecastInfo {
+  city: string;
+  /** 按日期升序的未来预报天（高德通常含今天及之后 3 天）。 */
+  days: ForecastDay[];
+}
+
+/**
+ * 多日天气预报（extensions=all）：一次调用返回该城市近期全部预报天。
+ * 缓存按 city（不按天）：一次调用覆盖多天，避免逐日消耗配额；TTL 1h。
+ */
+export async function weatherForecast(city: string): Promise<ForecastInfo | null> {
+  const key = `forecast:${city}`;
+  return cachedGet<ForecastInfo | null>(key, TTL_FORECAST_MS, async () => {
+    const url = new URL("https://restapi.amap.com/v3/weather/weatherInfo");
+    url.searchParams.set("key", amapKey());
+    url.searchParams.set("city", city);
+    url.searchParams.set("extensions", "all");
+    const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) throw new Error("upstream");
+    const data = await response.json() as {
+      status?: string;
+      forecasts?: Array<{
+        city?: string;
+        casts?: Array<{
+          date?: string;
+          dayweather?: string;
+          nightweather?: string;
+          daytemp?: string;
+          nighttemp?: string;
+        }>;
+      }>;
+    };
+    if (data.status !== "1") return null;
+    const forecast = data.forecasts?.[0];
+    const casts = forecast?.casts ?? [];
+    const days = casts
+      .filter((c) => c.date && c.dayweather)
+      .map((c) => ({
+        date: c.date!,
+        dayWeather: c.dayweather!,
+        nightWeather: c.nightweather ?? "",
+        tempHigh: Number(c.daytemp ?? "0") || 0,
+        tempLow: Number(c.nighttemp ?? "0") || 0,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (days.length === 0) return null;
+    return { city: forecast?.city ?? city, days };
   });
 }

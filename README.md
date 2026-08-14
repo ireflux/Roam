@@ -102,6 +102,9 @@ Environment variables:
 - `NEXT_PUBLIC_AMAP_JS_API_KEY` — AMap JS API key (public; restrict to your domain in the AMap console)
 - `NEXT_PUBLIC_AMAP_SECURITY_JS_CODE` — JS API security secret (development only, plaintext)
 - `NEXT_PUBLIC_AMAP_PROXY=true` + `AMAP_SECURITY_JS_CODE` — production: proxy the JS API through `/api/amap-proxy` so the secret stays server-side
+- `NEON_AUTH_BASE_URL` — Neon Auth base URL (`https://…neon.tech/…/auth`); unset to disable 收藏/登录
+- `NEON_AUTH_COOKIE_SECRET` — ≥32 chars; signs the session cookie cache (generate once: `openssl rand -base64 38`)
+- `NEXT_PUBLIC_AUTH_URL` — same as `NEON_AUTH_BASE_URL` (public, used by the browser client)
 
 Open http://localhost:3000 to create a route.
 

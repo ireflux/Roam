@@ -157,4 +157,50 @@ export class NeonTripRepo implements TripRepo {
       return row?.nickname ?? null;
     });
   }
+
+  async saveSharedTrip(ownerId: string, sourceShareId: string, tripId: string): Promise<void> {
+    return this.withRetry(async () => {
+      await this.db
+        .insert(schema.savedTrips)
+        .values({ ownerId, sourceShareId, tripId })
+        .onConflictDoNothing();
+    });
+  }
+
+  async getSavedTripId(ownerId: string, sourceShareId: string): Promise<string | null> {
+    return this.withRetry(async () => {
+      const [row] = await this.db
+        .select({ tripId: schema.savedTrips.tripId })
+        .from(schema.savedTrips)
+        .where(and(eq(schema.savedTrips.ownerId, ownerId), eq(schema.savedTrips.sourceShareId, sourceShareId)))
+        .limit(1);
+      return row ? row.tripId.toString() : null;
+    });
+  }
+
+  async claimTrips(fromOwnerId: string, toOwnerId: string): Promise<number> {
+    return this.withRetry(async () => {
+      const rows = await this.db
+        .update(schema.trips)
+        .set({ ownerId: toOwnerId, updatedAt: new Date() })
+        .where(and(eq(schema.trips.ownerId, fromOwnerId), sql`${schema.trips.ownerId} <> ${toOwnerId}`))
+        .returning({ id: schema.trips.id });
+      return rows.length;
+    });
+  }
+
+  async claimProfile(fromOwnerId: string, toOwnerId: string): Promise<void> {
+    return this.withRetry(async () => {
+      await this.db.transaction(async (tx) => {
+        const [fromRow] = await tx
+          .select()
+          .from(schema.profiles)
+          .where(eq(schema.profiles.ownerId, fromOwnerId))
+          .limit(1);
+        if (!fromRow) return;
+        await tx.delete(schema.profiles).where(eq(schema.profiles.ownerId, toOwnerId));
+        await tx.insert(schema.profiles).values({ ownerId: toOwnerId, nickname: fromRow.nickname, updatedAt: new Date() });
+      });
+    });
+  }
 }

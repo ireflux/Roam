@@ -20,6 +20,7 @@ import {
   reorderStops as opReorderStops,
   repairSegmentIds,
   segmentRequest,
+  setDayDate as opSetDayDate,
   setSegmentMode as opSetSegmentMode,
   updateSegmentVertex,
   updateStop as opUpdateStop,
@@ -68,6 +69,7 @@ interface TripState {
   addDay: () => void;
   removeDay: (dayId: string) => void;
   renameDay: (dayId: string, name: string) => void;
+  setDayDate: (dayId: string, date: string | null) => void;
   reorderDays: (fromIdx: number, toIdx: number) => void;
   moveStopToDay: (stopId: string, dayId: string) => void;
   updateStop: (stopId: string, patch: { name?: string; note?: string; category?: string }) => void;
@@ -478,6 +480,16 @@ export const useTripStore = create<TripState>((set, get) => ({
       const { trip } = get();
       if (!trip) return;
       const res = opRenameDay(trip.data, dayId, name);
+      if (!res.changed) return;
+      pushHistory(trip.data);
+      set({ trip: { ...trip, data: res.data } });
+      scheduleSave(get);
+    },
+
+    setDayDate: (dayId, date) => {
+      const { trip } = get();
+      if (!trip) return;
+      const res = opSetDayDate(trip.data, dayId, date);
       if (!res.changed) return;
       pushHistory(trip.data);
       set({ trip: { ...trip, data: res.data } });
