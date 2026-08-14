@@ -1,7 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
-import { Agent } from "undici";
 import * as schema from "@/lib/db/schema";
 import { toTrip, type TripRepo } from "@/lib/db/repo";
 import type { NewTripInput, TripData, Trip } from "@/lib/types";
@@ -10,13 +9,9 @@ export class NeonTripRepo implements TripRepo {
   private db: ReturnType<typeof drizzle<typeof schema>>;
 
   constructor(connectionString: string) {
-    // 禁用 keep-alive：Neon 代理会关闭空闲连接，undici 复用失效 socket 会抛
-    // "fetch failed"（间歇性 500）。HTTP 驱动无状态，每查询新建连接代价可忽略。
-    const client = neon(connectionString, {
-      fetchOptions: {
-        dispatcher: new Agent({ keepAliveTimeout: 1, keepAliveMaxTimeout: 1 }),
-      },
-    });
+    // 使用 Pooled 连接串（*-pooler.*.neon.tech，PgBouncer 托管）：
+    // 代理不会回收空闲连接，驱动默认 keep-alive 可安全复用，无需自定义 dispatcher。
+    const client = neon(connectionString);
     this.db = drizzle(client, { schema });
     // 冷启动预热：Neon 连接首次握手慢，提前 ping 避免用户首个请求超时
     this.db.execute(sql`select 1`).catch(() => {});
