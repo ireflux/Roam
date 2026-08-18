@@ -29,6 +29,28 @@ describe("MemoryTripRepo", () => {
     expect(await repo.remove("missing", "o1")).toBe(false);
   });
 
+  it("remove 为逻辑删除：列表与认领不再可见，收藏被级联软删", async () => {
+    const repo = makeRepo();
+    const trip = await repo.create({ ownerId: "o1", shareId: "abc123XYZ" });
+    await repo.create({ ownerId: "o1", shareId: "other1" });
+    await repo.saveSharedTrip("u9", "abc123XYZ", trip.id);
+    expect(await repo.getSavedTripId("u9", "abc123XYZ")).toBe(trip.id);
+
+    expect(await repo.remove(trip.id, "o1")).toBe(true);
+    expect(await repo.getById(trip.id)).toBeNull();
+    expect(await repo.getByShareId("abc123XYZ")).toBeNull();
+    expect((await repo.listByOwner("o1", 10)).map((t) => t.shareId)).toEqual(["other1"]);
+    expect(await repo.getSavedTripId("u9", "abc123XYZ")).toBeNull();
+  });
+
+  it("claimTrips 跳过已逻辑删除的行程", async () => {
+    const repo = makeRepo();
+    const deleted = await repo.create({ ownerId: "anon-123", shareId: "s1" });
+    await repo.create({ ownerId: "anon-123", shareId: "s2" });
+    await repo.remove(deleted.id, "anon-123");
+    expect(await repo.claimTrips("anon-123", "u1")).toBe(1);
+  });
+
   it("setNickname / getNickname 往返", async () => {
     const repo = makeRepo();
     expect(await repo.getNickname("o1")).toBeNull();

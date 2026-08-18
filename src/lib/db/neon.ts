@@ -54,6 +54,11 @@ export class NeonTripRepo implements TripRepo {
         .values({
           shareId: input.shareId,
           ownerId: input.ownerId,
+          creatorId: input.ownerId,
+          updaterId: input.ownerId,
+          // 显式写入毫秒精度：Postgres now() 带微秒，经 JS Date 往返会截断，
+          // 与客户端乐观锁比较时产生误判（见 update 的 1ms 窗口说明）
+          updatedAt: new Date(),
           title: input.title ?? null,
           data: input.data ?? { days: [], stops: [], segments: [] },
         })
@@ -67,7 +72,7 @@ export class NeonTripRepo implements TripRepo {
       const [row] = await this.db
         .select()
         .from(schema.trips)
-        .where(eq(schema.trips.id, id))
+        .where(and(eq(schema.trips.id, id), eq(schema.trips.isDelete, false)))
         .limit(1);
       return row ? toTrip(row) : null;
     });
@@ -78,7 +83,7 @@ export class NeonTripRepo implements TripRepo {
       const [row] = await this.db
         .select()
         .from(schema.trips)
-        .where(eq(schema.trips.shareId, shareId))
+        .where(and(eq(schema.trips.shareId, shareId), eq(schema.trips.isDelete, false)))
         .limit(1);
       return row ? toTrip(row) : null;
     });
@@ -90,14 +95,21 @@ export class NeonTripRepo implements TripRepo {
     patch: { data?: TripData; title?: string; expectedUpdatedAt?: string },
   ): Promise<Trip | null> {
     return this.withRetry(async () => {
-      const conditions = [eq(schema.trips.id, id), eq(schema.trips.ownerId, ownerId)];
+      const conditions = [eq(schema.trips.id, id), eq(schema.trips.ownerId, ownerId), eq(schema.trips.isDelete, false)];
       if (patch.expectedUpdatedAt !== undefined) {
-        conditions.push(eq(schema.trips.updatedAt, new Date(patch.expectedUpdatedAt)));
+        // 客户端只能表达毫秒精度（JS Date），而历史行仍是 now() 写入的微秒值，
+        // 精确相等会把同一版本的微秒残差误判为并发冲突。改为 1ms 窗口比较：
+        // 落在同一毫秒内的 DB 版本视为同一版本，同时仍能拦截跨毫秒的真实并发修改。
+        const t = new Date(patch.expectedUpdatedAt).getTime();
+        const start = new Date(t);
+        const end = new Date(t + 1);
+        conditions.push(sql`${schema.trips.updatedAt} >= ${start} AND ${schema.trips.updatedAt} < ${end}`);
       }
       const [row] = await this.db
         .update(schema.trips)
         .set({
           updatedAt: new Date(),
+          updaterId: ownerId,
           ...(patch.data !== undefined ? { data: patch.data } : {}),
           ...(patch.title !== undefined ? { title: patch.title } : {}),
         })
@@ -108,13 +120,22 @@ export class NeonTripRepo implements TripRepo {
     });
   }
 
+  /** 逻辑删除：置 is_delete 并级联逻辑删除收藏记录；不物理删行（收藏的 trip_id 为逻辑外键）。 */
   async remove(id: string, ownerId: string): Promise<boolean> {
     return this.withRetry(async () => {
-      const [row] = await this.db
-        .delete(schema.trips)
-        .where(and(eq(schema.trips.id, id), eq(schema.trips.ownerId, ownerId)))
-        .returning({ id: schema.trips.id });
-      return Boolean(row);
+      return this.db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(schema.trips)
+          .set({ isDelete: true, updaterId: ownerId, updatedAt: new Date() })
+          .where(and(eq(schema.trips.id, id), eq(schema.trips.ownerId, ownerId), eq(schema.trips.isDelete, false)))
+          .returning({ id: schema.trips.id });
+        if (!row) return false;
+        await tx
+          .update(schema.savedTrips)
+          .set({ isDelete: true, updaterId: ownerId })
+          .where(and(eq(schema.savedTrips.tripId, id), eq(schema.savedTrips.isDelete, false)));
+        return true;
+      });
     });
   }
 
@@ -123,7 +144,7 @@ export class NeonTripRepo implements TripRepo {
       const rows = await this.db
         .select()
         .from(schema.trips)
-        .where(eq(schema.trips.ownerId, ownerId))
+        .where(and(eq(schema.trips.ownerId, ownerId), eq(schema.trips.isDelete, false)))
         .orderBy(desc(schema.trips.updatedAt))
         .limit(limit);
       return rows.map(toTrip);
@@ -134,10 +155,10 @@ export class NeonTripRepo implements TripRepo {
     return this.withRetry(async () => {
       await this.db
         .insert(schema.profiles)
-        .values({ ownerId, nickname, updatedAt: new Date() })
+        .values({ ownerId, creatorId: ownerId, updaterId: ownerId, nickname, updatedAt: new Date() })
         .onConflictDoUpdate({
           target: schema.profiles.ownerId,
-          set: { nickname, updatedAt: new Date() },
+          set: { updaterId: ownerId, nickname, updatedAt: new Date(), isDelete: false },
         });
     });
   }
@@ -147,7 +168,7 @@ export class NeonTripRepo implements TripRepo {
       const [row] = await this.db
         .select()
         .from(schema.profiles)
-        .where(eq(schema.profiles.ownerId, ownerId))
+        .where(and(eq(schema.profiles.ownerId, ownerId), eq(schema.profiles.isDelete, false)))
         .limit(1);
       return row?.nickname ?? null;
     });
@@ -157,7 +178,7 @@ export class NeonTripRepo implements TripRepo {
     return this.withRetry(async () => {
       await this.db
         .insert(schema.savedTrips)
-        .values({ ownerId, sourceShareId, tripId })
+        .values({ ownerId, sourceShareId, tripId, creatorId: ownerId, updaterId: ownerId })
         .onConflictDoNothing();
     });
   }
@@ -167,7 +188,13 @@ export class NeonTripRepo implements TripRepo {
       const [row] = await this.db
         .select({ tripId: schema.savedTrips.tripId })
         .from(schema.savedTrips)
-        .where(and(eq(schema.savedTrips.ownerId, ownerId), eq(schema.savedTrips.sourceShareId, sourceShareId)))
+        .where(
+          and(
+            eq(schema.savedTrips.ownerId, ownerId),
+            eq(schema.savedTrips.sourceShareId, sourceShareId),
+            eq(schema.savedTrips.isDelete, false),
+          ),
+        )
         .limit(1);
       return row ? row.tripId.toString() : null;
     });
@@ -177,8 +204,14 @@ export class NeonTripRepo implements TripRepo {
     return this.withRetry(async () => {
       const rows = await this.db
         .update(schema.trips)
-        .set({ ownerId: toOwnerId, updatedAt: new Date() })
-        .where(and(eq(schema.trips.ownerId, fromOwnerId), sql`${schema.trips.ownerId} <> ${toOwnerId}`))
+        .set({ ownerId: toOwnerId, updaterId: toOwnerId, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.trips.ownerId, fromOwnerId),
+            eq(schema.trips.isDelete, false),
+            sql`${schema.trips.ownerId} <> ${toOwnerId}`,
+          ),
+        )
         .returning({ id: schema.trips.id });
       return rows.length;
     });
@@ -190,11 +223,19 @@ export class NeonTripRepo implements TripRepo {
         const [fromRow] = await tx
           .select()
           .from(schema.profiles)
-          .where(eq(schema.profiles.ownerId, fromOwnerId))
+          .where(and(eq(schema.profiles.ownerId, fromOwnerId), eq(schema.profiles.isDelete, false)))
           .limit(1);
         if (!fromRow) return;
         await tx.delete(schema.profiles).where(eq(schema.profiles.ownerId, toOwnerId));
-        await tx.insert(schema.profiles).values({ ownerId: toOwnerId, nickname: fromRow.nickname, updatedAt: new Date() });
+        await tx
+          .insert(schema.profiles)
+          .values({
+            ownerId: toOwnerId,
+            creatorId: fromRow.creatorId,
+            updaterId: toOwnerId,
+            nickname: fromRow.nickname,
+            updatedAt: new Date(),
+          });
       });
     });
   }

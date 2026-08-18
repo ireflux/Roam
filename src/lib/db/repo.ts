@@ -28,6 +28,9 @@ function toTrip(row: {
   id: string;
   shareId: string;
   ownerId: string;
+  creatorId: string;
+  updaterId: string;
+  isDelete: boolean;
   title: string | null;
   createdAt: Date;
   updatedAt: Date;
