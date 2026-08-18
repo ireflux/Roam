@@ -30,7 +30,7 @@ function toTrip(row: {
   ownerId: string;
   creatorId: string;
   updaterId: string;
-  isDelete: boolean;
+  isDeleted: boolean;
   title: string | null;
   createdAt: Date;
   updatedAt: Date;

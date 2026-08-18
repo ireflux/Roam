@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1785854096248,
-      "tag": "0000_lyrical_hobgoblin",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1786030213211,
-      "tag": "0001_milky_mystique",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1786185153152,
-      "tag": "0002_drop_trips_nickname",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1786637349034,
-      "tag": "0003_opposite_vampiro",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1787060830174,
-      "tag": "0004_sturdy_misty_knight",
+      "when": 1787066588801,
+      "tag": "0000_initial_schema",
       "breakpoints": true
     }
   ]

@@ -5,7 +5,7 @@ import { toTrip, type TripRepo } from "@/lib/db/repo";
 interface StoredTrip extends Trip {
   creatorId: string;
   updaterId: string;
-  isDelete: boolean;
+  isDeleted: boolean;
 }
 
 interface StoredSaved {
@@ -15,7 +15,7 @@ interface StoredSaved {
   tripId: string;
   creatorId: string;
   updaterId: string;
-  isDelete: boolean;
+  isDeleted: boolean;
 }
 
 export class MemoryTripRepo implements TripRepo {
@@ -37,7 +37,7 @@ export class MemoryTripRepo implements TripRepo {
       ownerId: input.ownerId,
       creatorId: input.ownerId,
       updaterId: input.ownerId,
-      isDelete: false,
+      isDeleted: false,
       title: input.title ?? null,
       createdAt: now,
       updatedAt: now,
@@ -49,12 +49,12 @@ export class MemoryTripRepo implements TripRepo {
 
   async getById(id: string): Promise<Trip | null> {
     const t = this.trips.get(id);
-    return t && !t.isDelete ? t : null;
+    return t && !t.isDeleted ? t : null;
   }
 
   async getByShareId(shareId: string): Promise<Trip | null> {
     for (const trip of this.trips.values()) {
-      if (trip.shareId === shareId && !trip.isDelete) return trip;
+      if (trip.shareId === shareId && !trip.isDeleted) return trip;
     }
     return null;
   }
@@ -65,7 +65,7 @@ export class MemoryTripRepo implements TripRepo {
     patch: { data?: TripData; title?: string; expectedUpdatedAt?: string },
   ): Promise<Trip | null> {
     const trip = this.trips.get(id);
-    if (!trip || trip.ownerId !== ownerId || trip.isDelete) return null;
+    if (!trip || trip.ownerId !== ownerId || trip.isDeleted) return null;
     // 内存实现存 ISO 字符串，直接字符串比较；不匹配视为并发冲突，返回 null。
     if (patch.expectedUpdatedAt !== undefined && trip.updatedAt !== patch.expectedUpdatedAt) return null;
     const updated: StoredTrip = {
@@ -79,14 +79,14 @@ export class MemoryTripRepo implements TripRepo {
     return updated;
   }
 
-  /** 逻辑删除：置 is_delete 并级联逻辑删除收藏记录，与 Neon 对齐。 */
+  /** 逻辑删除：置 is_deleted 并级联逻辑删除收藏记录，与 Neon 对齐。 */
   async remove(id: string, ownerId: string): Promise<boolean> {
     const trip = this.trips.get(id);
-    if (!trip || trip.ownerId !== ownerId || trip.isDelete) return false;
-    this.trips.set(id, { ...trip, isDelete: true, updaterId: ownerId, updatedAt: new Date().toISOString() });
+    if (!trip || trip.ownerId !== ownerId || trip.isDeleted) return false;
+    this.trips.set(id, { ...trip, isDeleted: true, updaterId: ownerId, updatedAt: new Date().toISOString() });
     for (const [key, sv] of this.savedMeta) {
-      if (sv.tripId === id && !sv.isDelete) {
-        this.savedMeta.set(key, { ...sv, isDelete: true, updaterId: ownerId });
+      if (sv.tripId === id && !sv.isDeleted) {
+        this.savedMeta.set(key, { ...sv, isDeleted: true, updaterId: ownerId });
       }
     }
     return true;
@@ -94,7 +94,7 @@ export class MemoryTripRepo implements TripRepo {
 
   async listByOwner(ownerId: string, limit = 10): Promise<Trip[]> {
     return [...this.trips.values()]
-      .filter((t) => t.ownerId === ownerId && !t.isDelete)
+      .filter((t) => t.ownerId === ownerId && !t.isDeleted)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, limit)
       .map((t) =>
@@ -128,7 +128,7 @@ export class MemoryTripRepo implements TripRepo {
         tripId,
         creatorId: ownerId,
         updaterId: ownerId,
-        isDelete: false,
+        isDeleted: false,
       });
     }
   }
@@ -136,7 +136,7 @@ export class MemoryTripRepo implements TripRepo {
   async getSavedTripId(ownerId: string, sourceShareId: string): Promise<string | null> {
     const key = this.savedKey(ownerId, sourceShareId);
     const meta = this.savedMeta.get(key);
-    if (!meta || meta.isDelete) return null;
+    if (!meta || meta.isDeleted) return null;
     return this.savedIds.get(key) ?? null;
   }
 
@@ -144,7 +144,7 @@ export class MemoryTripRepo implements TripRepo {
     if (fromOwnerId === toOwnerId) return 0;
     let count = 0;
     for (const [id, trip] of this.trips) {
-      if (trip.ownerId === fromOwnerId && !trip.isDelete) {
+      if (trip.ownerId === fromOwnerId && !trip.isDeleted) {
         this.trips.set(id, { ...trip, ownerId: toOwnerId, updaterId: toOwnerId, updatedAt: new Date().toISOString() });
         count++;
       }

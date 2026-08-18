@@ -72,7 +72,7 @@ export class NeonTripRepo implements TripRepo {
       const [row] = await this.db
         .select()
         .from(schema.trips)
-        .where(and(eq(schema.trips.id, id), eq(schema.trips.isDelete, false)))
+        .where(and(eq(schema.trips.id, id), eq(schema.trips.isDeleted, false)))
         .limit(1);
       return row ? toTrip(row) : null;
     });
@@ -83,7 +83,7 @@ export class NeonTripRepo implements TripRepo {
       const [row] = await this.db
         .select()
         .from(schema.trips)
-        .where(and(eq(schema.trips.shareId, shareId), eq(schema.trips.isDelete, false)))
+        .where(and(eq(schema.trips.shareId, shareId), eq(schema.trips.isDeleted, false)))
         .limit(1);
       return row ? toTrip(row) : null;
     });
@@ -95,7 +95,7 @@ export class NeonTripRepo implements TripRepo {
     patch: { data?: TripData; title?: string; expectedUpdatedAt?: string },
   ): Promise<Trip | null> {
     return this.withRetry(async () => {
-      const conditions = [eq(schema.trips.id, id), eq(schema.trips.ownerId, ownerId), eq(schema.trips.isDelete, false)];
+      const conditions = [eq(schema.trips.id, id), eq(schema.trips.ownerId, ownerId), eq(schema.trips.isDeleted, false)];
       if (patch.expectedUpdatedAt !== undefined) {
         // 客户端只能表达毫秒精度（JS Date），而历史行仍是 now() 写入的微秒值，
         // 精确相等会把同一版本的微秒残差误判为并发冲突。改为 1ms 窗口比较：
@@ -120,20 +120,20 @@ export class NeonTripRepo implements TripRepo {
     });
   }
 
-  /** 逻辑删除：置 is_delete 并级联逻辑删除收藏记录；不物理删行（收藏的 trip_id 为逻辑外键）。
+  /** 逻辑删除：置 is_deleted 并级联逻辑删除收藏记录；不物理删行（收藏的 trip_id 为逻辑外键）。
    *  neon-http 驱动不支持事务，两条 update 顺序执行；级联为尽力而为的清理。 */
   async remove(id: string, ownerId: string): Promise<boolean> {
     return this.withRetry(async () => {
       const [row] = await this.db
         .update(schema.trips)
-        .set({ isDelete: true, updaterId: ownerId, updatedAt: new Date() })
-        .where(and(eq(schema.trips.id, id), eq(schema.trips.ownerId, ownerId), eq(schema.trips.isDelete, false)))
+        .set({ isDeleted: true, updaterId: ownerId, updatedAt: new Date() })
+        .where(and(eq(schema.trips.id, id), eq(schema.trips.ownerId, ownerId), eq(schema.trips.isDeleted, false)))
         .returning({ id: schema.trips.id });
       if (!row) return false;
       await this.db
         .update(schema.savedTrips)
-        .set({ isDelete: true, updaterId: ownerId })
-        .where(and(eq(schema.savedTrips.tripId, id), eq(schema.savedTrips.isDelete, false)));
+        .set({ isDeleted: true, updaterId: ownerId })
+        .where(and(eq(schema.savedTrips.tripId, id), eq(schema.savedTrips.isDeleted, false)));
       return true;
     });
   }
@@ -143,7 +143,7 @@ export class NeonTripRepo implements TripRepo {
       const rows = await this.db
         .select()
         .from(schema.trips)
-        .where(and(eq(schema.trips.ownerId, ownerId), eq(schema.trips.isDelete, false)))
+        .where(and(eq(schema.trips.ownerId, ownerId), eq(schema.trips.isDeleted, false)))
         .orderBy(desc(schema.trips.updatedAt))
         .limit(limit);
       return rows.map(toTrip);
@@ -157,7 +157,7 @@ export class NeonTripRepo implements TripRepo {
         .values({ ownerId, creatorId: ownerId, updaterId: ownerId, nickname, updatedAt: new Date() })
         .onConflictDoUpdate({
           target: schema.profiles.ownerId,
-          set: { updaterId: ownerId, nickname, updatedAt: new Date(), isDelete: false },
+          set: { updaterId: ownerId, nickname, updatedAt: new Date(), isDeleted: false },
         });
     });
   }
@@ -167,7 +167,7 @@ export class NeonTripRepo implements TripRepo {
       const [row] = await this.db
         .select()
         .from(schema.profiles)
-        .where(and(eq(schema.profiles.ownerId, ownerId), eq(schema.profiles.isDelete, false)))
+        .where(and(eq(schema.profiles.ownerId, ownerId), eq(schema.profiles.isDeleted, false)))
         .limit(1);
       return row?.nickname ?? null;
     });
@@ -191,7 +191,7 @@ export class NeonTripRepo implements TripRepo {
           and(
             eq(schema.savedTrips.ownerId, ownerId),
             eq(schema.savedTrips.sourceShareId, sourceShareId),
-            eq(schema.savedTrips.isDelete, false),
+            eq(schema.savedTrips.isDeleted, false),
           ),
         )
         .limit(1);
@@ -207,7 +207,7 @@ export class NeonTripRepo implements TripRepo {
         .where(
           and(
             eq(schema.trips.ownerId, fromOwnerId),
-            eq(schema.trips.isDelete, false),
+            eq(schema.trips.isDeleted, false),
             sql`${schema.trips.ownerId} <> ${toOwnerId}`,
           ),
         )
@@ -221,7 +221,7 @@ export class NeonTripRepo implements TripRepo {
       const [fromRow] = await this.db
         .select()
         .from(schema.profiles)
-        .where(and(eq(schema.profiles.ownerId, fromOwnerId), eq(schema.profiles.isDelete, false)))
+        .where(and(eq(schema.profiles.ownerId, fromOwnerId), eq(schema.profiles.isDeleted, false)))
         .limit(1);
       if (!fromRow) return;
       await this.db.delete(schema.profiles).where(eq(schema.profiles.ownerId, toOwnerId));
