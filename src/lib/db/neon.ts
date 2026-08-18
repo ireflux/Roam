@@ -120,22 +120,21 @@ export class NeonTripRepo implements TripRepo {
     });
   }
 
-  /** 逻辑删除：置 is_delete 并级联逻辑删除收藏记录；不物理删行（收藏的 trip_id 为逻辑外键）。 */
+  /** 逻辑删除：置 is_delete 并级联逻辑删除收藏记录；不物理删行（收藏的 trip_id 为逻辑外键）。
+   *  neon-http 驱动不支持事务，两条 update 顺序执行；级联为尽力而为的清理。 */
   async remove(id: string, ownerId: string): Promise<boolean> {
     return this.withRetry(async () => {
-      return this.db.transaction(async (tx) => {
-        const [row] = await tx
-          .update(schema.trips)
-          .set({ isDelete: true, updaterId: ownerId, updatedAt: new Date() })
-          .where(and(eq(schema.trips.id, id), eq(schema.trips.ownerId, ownerId), eq(schema.trips.isDelete, false)))
-          .returning({ id: schema.trips.id });
-        if (!row) return false;
-        await tx
-          .update(schema.savedTrips)
-          .set({ isDelete: true, updaterId: ownerId })
-          .where(and(eq(schema.savedTrips.tripId, id), eq(schema.savedTrips.isDelete, false)));
-        return true;
-      });
+      const [row] = await this.db
+        .update(schema.trips)
+        .set({ isDelete: true, updaterId: ownerId, updatedAt: new Date() })
+        .where(and(eq(schema.trips.id, id), eq(schema.trips.ownerId, ownerId), eq(schema.trips.isDelete, false)))
+        .returning({ id: schema.trips.id });
+      if (!row) return false;
+      await this.db
+        .update(schema.savedTrips)
+        .set({ isDelete: true, updaterId: ownerId })
+        .where(and(eq(schema.savedTrips.tripId, id), eq(schema.savedTrips.isDelete, false)));
+      return true;
     });
   }
 
@@ -219,24 +218,22 @@ export class NeonTripRepo implements TripRepo {
 
   async claimProfile(fromOwnerId: string, toOwnerId: string): Promise<void> {
     return this.withRetry(async () => {
-      await this.db.transaction(async (tx) => {
-        const [fromRow] = await tx
-          .select()
-          .from(schema.profiles)
-          .where(and(eq(schema.profiles.ownerId, fromOwnerId), eq(schema.profiles.isDelete, false)))
-          .limit(1);
-        if (!fromRow) return;
-        await tx.delete(schema.profiles).where(eq(schema.profiles.ownerId, toOwnerId));
-        await tx
-          .insert(schema.profiles)
-          .values({
-            ownerId: toOwnerId,
-            creatorId: fromRow.creatorId,
-            updaterId: toOwnerId,
-            nickname: fromRow.nickname,
-            updatedAt: new Date(),
-          });
-      });
+      const [fromRow] = await this.db
+        .select()
+        .from(schema.profiles)
+        .where(and(eq(schema.profiles.ownerId, fromOwnerId), eq(schema.profiles.isDelete, false)))
+        .limit(1);
+      if (!fromRow) return;
+      await this.db.delete(schema.profiles).where(eq(schema.profiles.ownerId, toOwnerId));
+      await this.db
+        .insert(schema.profiles)
+        .values({
+          ownerId: toOwnerId,
+          creatorId: fromRow.creatorId,
+          updaterId: toOwnerId,
+          nickname: fromRow.nickname,
+          updatedAt: new Date(),
+        });
     });
   }
 }
