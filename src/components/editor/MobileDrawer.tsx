@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
+import { RotateCcw, RotateCw, TriangleAlert } from "lucide-react";
 import type { TripData, TripStop } from "@/lib/types";
 import { useTripStore } from "@/lib/useTripStore";
 import { useDrawer, LEVEL_HEIGHT } from "@/hooks/useDrawer";
@@ -15,7 +16,7 @@ interface MobileDrawerProps {
   onStopDeleted?: (stop: TripStop) => void;
 }
 
-const ROUNDED = "rounded-t-2xl";
+const ROUNDED = "rounded-t-3xl";
 
 /**
  * 移动端底部行程抽屉：
@@ -52,14 +53,14 @@ export default function MobileDrawer({ data, activeDayId, onDayChange, onLocateS
   return (
     <div className={`absolute inset-x-0 bottom-0 z-20 ${busy ? "pointer-events-none" : ""}`}>
       <div
-        className={`${ROUNDED} bg-white shadow-2xl transition-transform duration-200 ease-out dark:bg-zinc-950`}
+        className={`${ROUNDED} bg-surface shadow-float-lg ring-1 ring-line/70 transition-transform duration-200 ease-out`}
         style={{ height: heightPx, transform: `translateY(${dragOffset}px)` }}
         data-testid="mobile-drawer"
       >
         <div
           data-testid="drawer-handle"
-          className="mx-auto h-1.5 w-12 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-700"
-          style={{ marginTop: 8, touchAction: "none" }}
+          className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-line-strong"
+          style={{ touchAction: "none" }}
           onPointerDown={(e) => {
             drawer.dragStart(e.clientY);
             (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -92,11 +93,13 @@ function DrawerHeader() {
   const canRedo = useTripStore((s) => s.canRedo);
   const trip = useTripStore((s) => s.trip);
 
-  const chip = (children: React.ReactNode, title: string, onClick: (() => void) | undefined) => (
+  const chip = (disabled: boolean, title: string, onClick: (() => void) | undefined, children: React.ReactNode) => (
     <button
       onClick={onClick}
       title={title}
-      className="flex h-8 min-w-8 items-center justify-center rounded-full border border-zinc-200 px-2 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+      aria-label={title}
+      disabled={disabled}
+      className="flex h-8 min-w-8 cursor-pointer items-center justify-center rounded-full border border-line px-2 text-muted transition-interact hover:bg-surface-soft hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
     >
       {children}
     </button>
@@ -106,8 +109,8 @@ function DrawerHeader() {
     <div className="flex shrink-0 items-center gap-1.5 px-3 text-xs">
       <SaveStatusChip status={status} />
       <span className="flex-1" />
-      {chip("↩", "撤销 (Ctrl+Z)", canUndo ? () => useTripStore.getState().undo() : undefined)}
-      {chip("↪", "重做", canRedo ? () => useTripStore.getState().redo() : undefined)}
+      {chip(!canUndo, "撤销 (Ctrl+Z)", canUndo ? () => useTripStore.getState().undo() : undefined, <RotateCcw size={14} />)}
+      {chip(!canRedo, "重做", canRedo ? () => useTripStore.getState().redo() : undefined, <RotateCw size={14} />)}
       {trip && <ShareButton trip={trip} variant="ghost" />}
     </div>
   );
@@ -115,24 +118,34 @@ function DrawerHeader() {
 
 function SaveStatusChip({ status }: { status: string }) {
   const text =
-    status === "saved" ? "已保存 ✓" : status === "saving" ? "保存中…" : status === "error" ? "保存失败" : status === "dirty" ? "待保存…" : "";
+    status === "saved" ? "已保存" : status === "saving" ? "保存中…" : status === "error" ? "保存失败" : status === "dirty" ? "待保存…" : "";
+  const dot =
+    status === "saved"
+      ? "bg-brand"
+      : status === "saving"
+        ? "animate-pulse bg-amber"
+        : status === "dirty"
+          ? "bg-line-strong"
+          : "bg-danger";
   return (
     <span
       data-testid="save-status"
-      className={`inline-flex h-8 items-center rounded-full border px-2 font-medium ${
+      className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 font-medium ${
         status === "saved"
-          ? "border-emerald-200 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400"
+          ? "border-brand/25 text-brand"
           : status === "error"
-            ? "border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-800 dark:bg-amber-950"
-            : "border-zinc-200 text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
+            ? "border-danger/30 bg-danger-soft text-danger"
+            : "border-line text-muted"
       }`}
     >
+      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden />
       {text || "—"}
       {status === "error" && (
         <button
           onClick={() => void useTripStore.getState().save()}
-          className="ml-1 flex h-6 items-center rounded-full bg-amber-500 px-2 text-[11px] font-medium text-white hover:bg-amber-600"
+          className="ml-0.5 flex h-6 cursor-pointer items-center gap-1 rounded-full bg-danger px-2 text-[11px] font-medium text-white transition-interact hover:brightness-105"
         >
+          <TriangleAlert size={11} aria-hidden />
           重试
         </button>
       )}

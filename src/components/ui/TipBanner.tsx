@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Info } from "lucide-react";
 
 interface TipBannerProps {
   text: string;
@@ -39,20 +40,21 @@ export default function TipBanner({ text, position = "bottom", autoHideMs = 3500
       : "top-16 left-1/2 -translate-x-1/2";
   return (
     <div
-      className={`pointer-events-auto absolute z-30 flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-full border border-zinc-200 bg-zinc-900/95 px-4 py-2 text-sm text-zinc-100 shadow-lg dark:border-zinc-700 ${posCls}`}
+      className={`anim-toast-in pointer-events-auto absolute z-30 flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-full border border-white/10 bg-[#1e211b]/92 px-4 py-2 text-sm text-[#ecebe2] shadow-float backdrop-blur-md ${posCls}`}
     >
+      <Info size={16} className="shrink-0 text-[#6fd0a8]" aria-hidden />
       <span className="min-w-0 truncate">{text}</span>
       {actionText && onAction && (
         <button
           onClick={onAction}
-          className="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium text-emerald-300 hover:bg-white/10 hover:text-emerald-200"
+          className="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium text-[#6fd0a8] hover:bg-white/10"
         >
           {actionText}
         </button>
       )}
       <button
         onClick={() => setVisible(false)}
-        className="shrink-0 rounded-full px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-100"
+        className="shrink-0 rounded-full px-2 py-0.5 text-xs text-[#a2a49a] hover:text-[#ecebe2]"
       >
         知道了
       </button>

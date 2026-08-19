@@ -108,7 +108,7 @@ export default function MapView({ className, onLoad }: { className?: string; onL
     <div className={className}>
       <div data-testid="map-container" ref={containerRef} className="h-full w-full" />
       {message && (
-        <div className="absolute inset-0 flex items-center justify-center bg-zinc-100 p-6 text-center text-sm text-zinc-500">
+        <div className="absolute inset-0 flex items-center justify-center bg-paper p-6 text-center text-sm text-muted">
           {message}
         </div>
       )}

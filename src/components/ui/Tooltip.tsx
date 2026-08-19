@@ -7,7 +7,7 @@ interface Props {
   children?: React.ReactNode;
 }
 
-const TOOLTIP_BASE = "rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200";
+const TOOLTIP_BASE = "rounded-lg border border-line bg-surface px-3 py-1.5 text-xs text-ink shadow-float";
 
 /**
  * 轻量 tooltip：桌面 hover 显示，移动端长按（750ms）显示。
@@ -42,7 +42,7 @@ export default function Tooltip({ label, children }: Props) {
 /** 快捷方式注释：跟随 tooltip 尾部展示，仅桌面可见。 */
 export function Shortcut({ value }: { value: string }) {
   return (
-    <kbd className="ml-2 rounded border border-zinc-300 bg-zinc-100 px-1 font-mono text-[10px] text-zinc-500 dark:border-zinc-600 dark:bg-zinc-800">
+    <kbd className="ml-2 rounded border border-line-strong bg-surface-soft px-1 font-mono text-[10px] text-muted">
       {value}
     </kbd>
   );

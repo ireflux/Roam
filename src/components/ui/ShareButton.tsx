@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check, Share2 } from "lucide-react";
 import type { Trip } from "@/lib/types";
 
 /** 分享按钮：移动端优先系统分享面板，fallback 复制链接。 */
@@ -30,14 +31,15 @@ export default function ShareButton({ trip, variant = "solid" }: { trip: Trip; v
   };
 
   const base =
-    "rounded-full text-sm font-medium transition select-none " +
+    "transition-interact inline-flex items-center gap-1.5 rounded-full text-sm font-medium select-none " +
     (variant === "solid"
-      ? "bg-emerald-600 text-white shadow hover:bg-emerald-700 active:scale-95"
-      : "border border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800");
+      ? "bg-brand text-white shadow-sm hover:bg-brand-deep active:scale-95"
+      : "border border-line text-muted hover:bg-surface-soft hover:text-ink");
 
   return (
     <button onClick={share} className={`${base} px-4 py-2`}>
-      {copied ? "已复制 ✓" : "分享"}
+      {copied ? <Check size={15} /> : <Share2 size={15} />}
+      {copied ? "已复制" : "分享"}
     </button>
   );
 }

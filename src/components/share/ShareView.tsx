@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import QRCode from "qrcode";
+import { CalendarDays, Check, ChevronRight, Navigation, Play, Pause, QrCode, X } from "lucide-react";
 import type { AmapMap, AmapOverlay } from "@/lib/mapTypes";
 import type { Mode, PublicTrip, TripData, TripStop } from "@/lib/types";
 import { MODE_LABEL } from "@/lib/types";
@@ -10,16 +11,14 @@ import { formatDistance } from "@/lib/trip/geo";
 import { summarizeDay } from "@/lib/trip/ops";
 import { useDayWeather, weatherPoints, WeatherBadge, type DayWeatherInfo } from "@/components/weather/useDayWeather";
 import { useAuthState } from "@/lib/auth-client";
+import { useDismissOnEscape } from "@/hooks/useDismissOnEscape";
 import SaveAction from "@/components/share/SaveAction";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
-/* 明信片色板（spec 2026-08-13 功能四） */
-const PAPER = "#F7F3EC";
-const GREEN = "#0D7A5F";
+const GREEN = "#0E7A5C";
 const GOLD = "#C9A86A";
-const INK = "#23262B";
-const MUTED = "#8A857A";
+const INK = "#1D211D";
 const AMBER = "#B45309";
 const GREEN_LIGHT = "#5B9E8A";
 
@@ -71,6 +70,7 @@ export default function ShareView({ trip, nickname, savedTripId }: { trip: Publi
 
   const tripUrl = typeof window === "undefined" ? "" : window.location.href.split("#")[0];
   const [copied, setCopied] = useState(false);
+  useDismissOnEscape(qrOpen, () => setQrOpen(false));
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(tripUrl);
@@ -82,37 +82,41 @@ export default function ShareView({ trip, nickname, savedTripId }: { trip: Publi
   };
 
   return (
-    <main className="min-h-dvh w-full overflow-x-hidden" style={{ background: PAPER }}>
+    <main className="min-h-dvh w-full overflow-x-hidden bg-paper text-ink">
       <header className="mx-auto flex w-full max-w-3xl items-baseline justify-between px-4 pb-2 pt-5 sm:px-6">
-        <span className="text-lg font-bold tracking-[0.2em]" style={{ color: GREEN }}>ROAM</span>
-        <span className="text-xs" style={{ color: MUTED }}>
+        <span className="font-serif text-lg font-bold tracking-[0.28em] text-brand">ROAM</span>
+        <span className="text-xs text-muted">
           路线 · 由 {nickname || "旅行者"} 分享
         </span>
       </header>
 
-      <div className="mx-auto w-full max-w-3xl px-4 pb-32 pt-2 sm:px-6 sm:pb-24">
+      <div className="mx-auto w-full max-w-3xl px-4 pb-32 pt-4 sm:px-6 sm:pb-24">
         {/* 封面明信片：地图内嵌 + 印章 + 数据条 */}
-        <div ref={coverRef} className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border border-black/5 shadow-xl sm:aspect-[16/9] sm:rounded-3xl">
+        <div
+          ref={coverRef}
+          className="anim-scale-in relative aspect-[4/3] w-full overflow-hidden rounded-2xl border border-line shadow-float-lg sm:aspect-[16/9] sm:rounded-3xl"
+        >
           <MapView className="absolute inset-0" onLoad={setMap} />
           {map && <ShareLayers map={map} data={trip.data} playing={playing} />}
+          {/* 印章 */}
           <div
-            className="absolute right-3 top-3 flex h-14 w-14 rotate-12 items-center justify-center rounded-full border-2 text-2xl"
-            style={{ borderColor: GOLD, color: AMBER, background: "rgba(255,255,255,0.55)" }}
+            className="absolute right-3 top-3 flex h-14 w-14 rotate-12 items-center justify-center rounded-full border-2 font-serif text-2xl text-amber shadow-sm backdrop-blur-[2px]"
+            style={{ borderColor: GOLD, background: "rgba(255,255,255,0.6)" }}
             aria-hidden
           >
             游
           </div>
-          <div className="absolute inset-x-3 bottom-3 rounded-xl p-4 backdrop-blur-sm sm:inset-x-4 sm:bottom-4" style={{ background: "rgba(255,255,255,0.92)" }}>
-            <h1 className="font-serif text-xl font-bold leading-snug sm:text-2xl" style={{ color: INK }}>
+          <div className="absolute inset-x-3 bottom-3 rounded-xl border border-white/60 bg-white/90 p-4 shadow-card backdrop-blur-md sm:inset-x-4 sm:bottom-4">
+            <h1 className="font-serif text-xl font-bold leading-snug sm:text-2xl">
               {trip.title || "未命名路线"}
             </h1>
-            <p className="mt-0.5 text-xs" style={{ color: MUTED }}>
+            <p className="mt-0.5 text-xs text-muted">
               {nickname ? `由 ${nickname} 精心编排` : "一段精心编排的旅程"}
             </p>
-            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" style={{ color: INK }}>
-              <span><b className="font-semibold" style={{ color: GREEN }}>{trip.data.days.length}</b> 天</span>
-              <span><b className="font-semibold" style={{ color: GREEN }}>{totals.stops}</b> 站</span>
-              <span><b className="font-semibold" style={{ color: GREEN }}>{formatDistance(totals.m)}</b></span>
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <span><b className="font-semibold text-brand">{trip.data.days.length}</b> 天</span>
+              <span><b className="font-semibold text-brand">{totals.stops}</b> 站</span>
+              <span><b className="font-semibold text-brand">{formatDistance(totals.m)}</b></span>
               <span className="ml-auto"><WeatherBadge info={dayWeather[firstDayId ?? ""]} /></span>
             </div>
           </div>
@@ -125,50 +129,60 @@ export default function ShareView({ trip, nickname, savedTripId }: { trip: Publi
           const modes = [...new Set(trip.data.segments.filter((seg) => stopIds.has(seg.fromStop) && stopIds.has(seg.toStop)).map((seg) => seg.mode))];
           const daySummary = summarizeDay(trip.data, day.id);
           return (
-            <section key={day.id} className="mt-8">
-              <div className="flex items-end justify-between gap-3">
+            <section key={day.id} className="mt-10">
+              <div className="flex flex-wrap items-end justify-between gap-3">
                 <div className="flex items-baseline gap-3">
-                  <span className="font-serif text-4xl font-bold leading-none" style={{ color: GREEN }}>{String(dayIndex + 1).padStart(2, "0")}</span>
-                  <h2 className="text-lg font-semibold" style={{ color: INK }}>{day.name ?? `第 ${dayIndex + 1} 天`}</h2>
+                  <span className="font-serif text-5xl font-bold leading-none text-brand">
+                    {String(dayIndex + 1).padStart(2, "0")}
+                  </span>
+                  <h2 className="text-lg font-semibold">{day.name ?? `第 ${dayIndex + 1} 天`}</h2>
                 </div>
                 <DayMeta day={day} modes={modes} weather={dayWeather[day.id]} stopCount={stops.length} minutes={daySummary.durationMin} />
               </div>
               {stops.length === 0 ? (
-                <p className="rounded-xl border border-dashed px-4 py-6 text-center text-sm" style={{ color: MUTED, borderColor: "#D9D2C2" }}>
+                <p className="mt-4 rounded-2xl border border-dashed border-line-strong px-4 py-6 text-center text-sm text-muted">
                   当日暂无行程，可自由漫步
                 </p>
               ) : (
-                <ol className="relative mt-5">
-                  <div className="absolute bottom-2 left-[7px] top-2 w-0.5" style={{ background: `linear-gradient(to bottom, ${GREEN} 0%, ${GREEN} 70%, ${GOLD} 100%)` }} aria-hidden />
+                <ol className="relative mt-6">
+                  <div
+                    className="absolute bottom-3 left-[13px] top-3 w-0.5 rounded-full"
+                    style={{ background: `linear-gradient(to bottom, ${GREEN} 0%, ${GREEN} 60%, ${GOLD} 100%)` }}
+                    aria-hidden
+                  />
                   {stops.map((stop, index) => {
                     const isLast = index === stops.length - 1;
                     const intoMode = trip.data.segments.find((seg) => seg.toStop === stop.id)?.mode;
                     return (
-                      <li key={stop.id} className="relative pb-5 pl-8 last:pb-0">
+                      <li key={stop.id} className="relative pb-5 pl-10 last:pb-0">
                         <span
-                          className="absolute left-0 top-1 h-4 w-4 rounded-full border-2 bg-white"
-                          style={{ borderColor: isLast ? GOLD : GREEN }}
+                          className={`absolute left-0 top-1.5 flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white shadow-sm ${
+                            isLast ? "bg-gold" : "bg-brand"
+                          }`}
                           aria-hidden
-                        />
-                        <div className="flex items-start gap-3 rounded-xl bg-white px-4 py-3 shadow-sm" style={{ border: "1px solid #EDE7DA" }}>
+                        >
+                          {index + 1}
+                        </span>
+                        <div className="group flex items-center gap-3 rounded-2xl border border-line bg-surface/80 px-4 py-3 shadow-sm backdrop-blur-sm transition-all hover:border-brand/30 hover:shadow-card">
                           <div className="min-w-0 flex-1">
-                            <div className="truncate font-medium" style={{ color: INK }}>{stop.name || "未命名地点"}</div>
-                            {stop.note && <div className="mt-0.5 truncate text-xs" style={{ color: MUTED }}>{stop.note}</div>}
+                            <div className="truncate font-medium">{stop.name || "未命名地点"}</div>
+                            {stop.note && <div className="mt-0.5 truncate text-xs text-muted">{stop.note}</div>}
                           </div>
                           <a
                             href={navLink(stop, intoMode)}
                             target="_blank"
                             rel="noopener noreferrer"
                             title="发起导航"
-                            className="hidden shrink-0 items-center justify-center rounded-full p-2 text-lg hover:scale-110 sm:flex"
+                            aria-label={`导航到 ${stop.name || "未命名地点"}`}
+                            className="hidden shrink-0 items-center justify-center rounded-full p-2 text-brand opacity-0 transition-interact hover:bg-brand-soft focus-visible:opacity-100 group-hover:opacity-100 sm:flex"
                           >
-                            🧭
+                            <Navigation size={17} />
                           </a>
                         </div>
                       </li>
                     );
                   })}
-                  <span className="absolute -bottom-1.5 left-[3px] h-3 w-3 rounded-full border-2 bg-white" style={{ borderColor: GOLD }} aria-hidden />
+                  <span className="absolute -bottom-1 left-[9px] h-2.5 w-2.5 rounded-full border-2 border-gold bg-gold/20" aria-hidden />
                 </ol>
               )}
             </section>
@@ -177,24 +191,23 @@ export default function ShareView({ trip, nickname, savedTripId }: { trip: Publi
       </div>
 
       {/* 底部操作条 */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur" style={{ background: "rgba(247,243,236,0.95)", borderColor: "#E3DCCD" }}>
-        <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3 sm:px-6">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-paper/95 backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-3xl items-center gap-2.5 px-4 py-3 sm:px-6">
           <button
             onClick={togglePlay}
-            className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full text-sm font-semibold text-white shadow-md hover:brightness-110 active:scale-[0.98]"
-            style={{ background: GREEN }}
+            className="flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-full bg-brand text-sm font-semibold text-white shadow-md transition-interact hover:brightness-110 active:scale-[0.98]"
           >
-            {playing ? "⏸ 暂停" : "▶ 播放全程"}
+            {playing ? <Pause size={16} aria-hidden /> : <Play size={16} aria-hidden />}
+            {playing ? "暂停" : "播放全程"}
           </button>
           <SaveAction trip={trip} auth={auth} savedTripId={savedTripId ?? null} />
           <button
             onClick={() => setQrOpen(true)}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-lg"
-            style={{ borderColor: "#DDD5C4", background: "#FFFFFF" }}
+            className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line bg-surface text-muted shadow-sm transition-interact hover:border-brand/40 hover:text-brand active:scale-95"
             title="在手机上打开"
             aria-label="二维码"
           >
-            ▦
+            <QrCode size={18} />
           </button>
         </div>
         <div className="mx-auto w-full max-w-3xl px-4 pb-3 sm:hidden sm:px-6">
@@ -202,28 +215,38 @@ export default function ShareView({ trip, nickname, savedTripId }: { trip: Publi
             href={nextStopNavLink(trip.data)}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex h-11 items-center justify-center gap-2 rounded-full border text-sm font-semibold"
-            style={{ borderColor: GREEN, color: GREEN, background: "#FFFFFF" }}
+            className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-brand/50 bg-surface text-sm font-semibold text-brand transition-interact hover:bg-brand-soft active:scale-[0.98]"
           >
-            🧭 导航到下一站
+            <Navigation size={16} aria-hidden />
+            导航到下一站
           </a>
         </div>
       </div>
 
       {/* 二维码弹窗 */}
       {qrOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="二维码">
-          <button className="absolute inset-0 bg-black/40" aria-label="关闭" onClick={() => setQrOpen(false)} />
-          <div className="relative w-72 rounded-2xl bg-white p-6 text-center shadow-2xl">
-            <button className="absolute right-3 top-3 text-sm text-zinc-400 hover:text-zinc-600" aria-label="关闭" onClick={() => setQrOpen(false)}>✕</button>
-            <h3 className="text-base font-semibold" style={{ color: INK }}>在手机上打开路线</h3>
+        <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="二维码">
+          <button className="absolute inset-0 cursor-pointer bg-ink/50 backdrop-blur-sm" aria-label="关闭" onClick={() => setQrOpen(false)} />
+          <div className="anim-scale-in relative w-80 rounded-3xl border border-line bg-surface p-6 text-center shadow-float-lg">
+            <button
+              className="absolute right-3 top-3 cursor-pointer rounded-full p-1.5 text-faint transition-interact hover:bg-surface-soft hover:text-ink"
+              aria-label="关闭"
+              onClick={() => setQrOpen(false)}
+            >
+              <X size={16} />
+            </button>
+            <h3 className="font-serif text-base font-semibold">在手机上打开路线</h3>
             <div className="mt-4 flex justify-center">
               {/* eslint-disable-next-line @next/next/no-img-element -- 客户端生成的 data URL 二维码，无需 next/image 优化 */}
-              {qrData ? <img src={qrData} alt="路线二维码" width={216} height={216} className="rounded-lg" /> : <div className="flex h-[216px] w-[216px] items-center justify-center rounded-lg bg-zinc-50 text-sm text-zinc-400">生成中…</div>}
+              {qrData ? <img src={qrData} alt="路线二维码" width={216} height={216} className="rounded-xl border border-line" /> : <div className="flex h-[216px] w-[216px] items-center justify-center rounded-xl bg-surface-soft text-sm text-faint">生成中…</div>}
             </div>
-            <p className="mt-3 break-all text-xs" style={{ color: MUTED }}>{tripUrl || ""}</p>
-            <button onClick={copyLink} className="mt-3 h-9 w-full rounded-full text-sm font-semibold text-white" style={{ background: GREEN }}>
-              {copied ? "✓ 已复制" : "复制链接"}
+            <p className="mt-3 break-all text-xs text-muted">{tripUrl || ""}</p>
+            <button
+              onClick={copyLink}
+              className="mt-3 flex h-10 w-full cursor-pointer items-center justify-center gap-1.5 rounded-full bg-brand text-sm font-semibold text-white transition-interact hover:brightness-110 active:scale-[0.98]"
+            >
+              {copied ? <Check size={15} aria-hidden /> : <ChevronRight size={15} aria-hidden />}
+              {copied ? "已复制" : "复制链接"}
             </button>
           </div>
         </div>
@@ -242,14 +265,21 @@ function DayMeta({ day, modes, weather, stopCount, minutes }: {
   minutes: number;
 }) {
   const date = day.date ? parseDate(day.date) : null;
-  const meta: string[] = [];
-  if (date) meta.push(`${date.month} 月 ${date.day} 日 · 周${date.weekday}`);
-  if (weather) meta.push(weatherText(weather));
-  meta.push(`${stopCount} 站`);
-  if (modes.length) meta.push(modes.map((m) => MODE_LABEL[m]).join("·"));
-  if (minutes > 0) meta.push(`约 ${Math.ceil(minutes / 60)} 时`);
+  const meta: { icon?: React.ReactNode; text: string }[] = [];
+  if (date) meta.push({ icon: <CalendarDays size={11} aria-hidden />, text: `${date.month} 月 ${date.day} 日 · 周${date.weekday}` });
+  if (weather) meta.push({ text: weatherText(weather) });
+  meta.push({ text: `${stopCount} 站` });
+  if (modes.length) meta.push({ text: modes.map((m) => MODE_LABEL[m]).join("·") });
+  if (minutes > 0) meta.push({ text: `约 ${Math.ceil(minutes / 60)} 时` });
   return (
-    <p className="shrink-0 text-right text-xs leading-5" style={{ color: MUTED }}>{meta.join(" · ")}</p>
+    <div className="flex max-w-full shrink-0 flex-wrap items-center justify-end gap-x-2 gap-y-1 text-right text-xs leading-5 text-muted">
+      {meta.map((m, i) => (
+        <span key={i} className="inline-flex items-center gap-1">
+          {m.icon}
+          {m.text}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -293,7 +323,7 @@ function ShareLayers({ map, data, playing }: { map: AmapMap; data: TripData; pla
       }),
       ...data.stops.map((stop) => new window.AMap!.Marker({
         position: [stop.lng, stop.lat],
-        content: `<span style="display:block;width:15px;height:15px;border:2px solid ${GREEN};border-radius:50%;background:white"></span>`,
+        content: `<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:9999px;border:2px solid ${GREEN};background:#fff;color:${GREEN};font:600 11px/1 -apple-system,system-ui,sans-serif">${stopContentLabel(data, stop.id)}</span>`,
         anchor: "center",
       })),
     ];
@@ -335,6 +365,13 @@ function ShareLayers({ map, data, playing }: { map: AmapMap; data: TripData; pla
     return () => { cancelAnimationFrame(frame); marker.setMap(null); };
   }, [map, data, playing]);
   return null;
+}
+
+/** 分享地图上站点编号：按天内的顺序（与编辑器/时间线一致）。 */
+function stopContentLabel(data: TripData, stopId: string): string {
+  const dayId = data.stops.find((s) => s.id === stopId)?.dayId;
+  const list = data.stops.filter((s) => s.dayId === dayId).sort((a, b) => a.order - b.order);
+  return String(list.findIndex((s) => s.id === stopId) + 1);
 }
 
 /* ------------------------------- 导航链接 ------------------------------- */

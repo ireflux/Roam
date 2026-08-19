@@ -77,7 +77,7 @@ test.describe("编辑器冒烟", () => {
     await expect(page.getByTestId("mobile-drawer")).toBeVisible();
     await page.getByTitle("绘制").click();
     await expect(page.getByText("按住地图开始绘制 · 松手完成")).toBeVisible();
-    await expect(page.getByText("🔒 已锁定")).toBeVisible();
+    await expect(page.getByText("已锁定")).toBeVisible();
     await expect.poll(() => drawerHeight(page)).toBeLessThan(20);
     await page.getByTitle("选择").click();
     await expect.poll(() => drawerHeight(page)).toBeGreaterThan(20);
@@ -120,6 +120,7 @@ test.describe("编辑器冒烟", () => {
     const { id } = (await res.json()) as { id: string };
     const seed = await page.request.patch(`/api/trips/${id}`, {
       data: {
+        force: true,
         data: {
           days: [
             { id: "d1", name: "第 1 天" },
@@ -157,6 +158,7 @@ test.describe("编辑器冒烟", () => {
     // 单击地点行 = 定位，不进入编辑
     await rows.first().click();
     await expect(page.getByPlaceholder("地点名称")).toHaveCount(0);
+    await page.mouse.move(0, 0); // 移开鼠标，清除 group-hover 状态
 
     // hover 出现铅笔按钮，点击进入编辑
     const pencil = page.getByRole("button", { name: "编辑 第二站", exact: true });

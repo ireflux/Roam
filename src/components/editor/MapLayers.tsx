@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { AmapMap, AmapOverlay } from "@/lib/mapTypes";
 import type { Position, TripData, TripSegment } from "@/lib/types";
-import { MODE_ICON, MODE_LABEL } from "@/lib/types";
+import { MODE_LABEL } from "@/lib/types";
+import { modeIconSvg } from "@/lib/modeIcons";
 import { useTripStore } from "@/lib/useTripStore";
 import { daySegments, dayStops } from "@/lib/trip/ops";
 import { pointAtFraction } from "@/lib/trip/geo";
@@ -11,19 +12,20 @@ import { setSegmentLine } from "@/lib/mapOverlays";
 import { useIsMobile } from "@/hooks/useIsMobile";
 
 const EMPTY_DATA: TripData = { days: [], stops: [], segments: [] };
-const COLORS = { driving: "#2563eb", walking: "#059669", cycling: "#ea580c", transit: "#0891b2", freehand: "#71717a", snapped: "#7c3aed", degraded: "#d97706" };
+const COLORS = { driving: "#2563eb", walking: "#0e7a5c", cycling: "#ea580c", transit: "#0891b2", freehand: "#71717a", snapped: "#7c3aed", degraded: "#b45309" };
 /** 线段方式标签的显示缩放阈值：低于此级别线段密集，隐藏标签避免重叠。 */
 const LABEL_ZOOM_THRESHOLD = 12;
 
 function stopContent(label: string, selected: boolean) {
-  return `<span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:9999px;border:2px solid ${selected ? "#0f766e" : "#059669"};background:${selected ? "#0d9488" : "#fff"};color:${selected ? "#fff" : "#065f46"};font:600 11px Arial">${label}</span>`;
+  return `<span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:9999px;border:2px solid ${selected ? "#0b644b" : "#0e7a5c"};background:${selected ? "#0b644b" : "#fff"};color:${selected ? "#fff" : "#0b644b"};font:600 11px/1 -apple-system,system-ui,sans-serif">${label}</span>`;
 }
 
 /** 线段方式标签：图标+文字徽章，用色与线段一致（降级段标「已降级」）；手绘/吸附段不标。 */
 function segmentLabelContent(segment: TripSegment): string {
-  const text = segment.degraded ? "已降级" : `${MODE_ICON[segment.mode]} ${MODE_LABEL[segment.mode]}`;
-  const color = segment.degraded ? COLORS.degraded : COLORS[segment.mode];
-  return `<span style="display:inline-flex;align-items:center;padding:1px 7px;border-radius:9999px;border:1.5px solid ${color};background:#fff;color:#27272a;font:600 11px/1.6 system-ui,Arial;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.12)">${text}</span>`;
+  const degraded = segment.degraded;
+  const text = degraded ? "已降级" : `${MODE_LABEL[segment.mode]}`;
+  const color = degraded ? COLORS.degraded : COLORS[segment.mode];
+  return `<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:999px;border:1.5px solid ${color};background:#fff;color:#27272a;font:600 11px/1.6 -apple-system,system-ui,sans-serif;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.12)">${degraded ? "" : modeIconSvg(segment.mode, 11)}${text}</span>`;
 }
 
 /** 段样式：降级（琥珀虚线）优先于手绘/吸附/出行方式的常规配色。 */

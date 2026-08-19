@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { KeyRound, Mail, Star, X } from "lucide-react";
 import type { PublicTrip } from "@/lib/types";
 import { requestSignIn, verifySignIn, type AuthStatus } from "@/lib/auth-client";
+import { useDismissOnEscape } from "@/hooks/useDismissOnEscape";
 
-/* 明信片色板（spec 2026-08-13 功能四） */
-const GREEN = "#0D7A5F";
-const GOLD = "#C9A86A";
-const INK = "#23262B";
-const MUTED = "#8A857A";
-const AMBER = "#B45309";
+const GREEN = "#0E7A5C";
+const INK = "#1D211D";
+const MUTED = "#6E6D64";
 
 export default function SaveAction({ trip, auth, savedTripId }: {
   trip: PublicTrip;
@@ -72,10 +72,10 @@ export default function SaveAction({ trip, auth, savedTripId }: {
     return (
       <a
         href={`/editor/${saved}`}
-        className="flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-full border px-4 text-sm font-semibold transition-colors"
-        style={{ borderColor: GOLD, background: "#FFF8E7", color: AMBER }}
+        className="flex h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-gold/60 bg-gold-soft px-4 text-sm font-semibold text-amber shadow-sm transition-interact hover:shadow-card active:scale-[0.98]"
       >
-        ★ 已收藏 · 打开
+        <Star size={15} fill="currentColor" aria-hidden />
+        已收藏 · 打开
       </a>
     );
   }
@@ -85,11 +85,12 @@ export default function SaveAction({ trip, auth, savedTripId }: {
       <button
         onClick={doSave}
         disabled={busy}
-        className="flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-full border px-4 text-sm font-semibold transition-colors disabled:cursor-wait disabled:opacity-60"
-        style={{ borderColor: "#DDD5C4", background: "#FFFFFF", color: GREEN }}
+        className="flex h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full border px-4 text-sm font-semibold text-brand shadow-sm transition-interact hover:shadow-card active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
+        style={{ borderColor: "#D9D2C2", background: "#FFFFFF" }}
         title={auth.status === "authed" ? "收藏到我的行程" : "登录后收藏"}
       >
-        {saving ? "保存中…" : "☆ 收藏"}
+        {saving ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden /> : <Star size={15} aria-hidden />}
+        {saving ? "保存中…" : "收藏"}
       </button>
       {loginOpen && (
         <LoginSheet
@@ -120,6 +121,7 @@ function LoginSheet({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
   const [step, setStep] = useState<"email" | "code">("email");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useDismissOnEscape(true, onClose);
 
   const sendCode = async () => {
     const value = email.trim();
@@ -155,12 +157,26 @@ function LoginSheet({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="登录">
-      <button className="absolute inset-0 bg-black/40" aria-label="关闭" onClick={onClose} />
-      <div className="relative w-80 rounded-2xl bg-white p-6 shadow-2xl">
-        <button className="absolute right-3 top-3 text-sm text-zinc-400 hover:text-zinc-600" aria-label="关闭" onClick={onClose}>✕</button>
-        <h3 className="text-base font-semibold" style={{ color: INK }}>
+  return createPortal(
+    <div
+      className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="登录"
+    >
+      <button className="absolute inset-0 cursor-pointer bg-ink/50 backdrop-blur-sm" aria-label="关闭" onClick={onClose} />
+      <div className="anim-scale-in relative w-80 rounded-3xl border border-line bg-surface p-6 shadow-float-lg">
+        <button
+          className="absolute right-3 top-3 cursor-pointer rounded-full p-1.5 text-faint transition-interact hover:bg-surface-soft hover:text-ink"
+          aria-label="关闭"
+          onClick={onClose}
+        >
+          <X size={16} />
+        </button>
+        <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-soft text-brand">
+          {step === "email" ? <Mail size={20} strokeWidth={1.75} aria-hidden /> : <KeyRound size={20} strokeWidth={1.75} aria-hidden />}
+        </span>
+        <h3 className="mt-3 text-base font-semibold" style={{ color: INK }}>
           {step === "email" ? "登录后收藏这条路线" : "输入验证码"}
         </h3>
         <p className="mt-1 text-xs" style={{ color: MUTED }}>
@@ -176,16 +192,17 @@ function LoginSheet({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && sendCode()}
               placeholder="you@example.com"
-              className="mt-4 h-11 w-full rounded-xl border px-3 text-sm outline-none focus:border-emerald-600"
-              style={{ borderColor: error ? "#DC2626" : "#DDD5C4" }}
+              className="mt-4 h-11 w-full rounded-xl border bg-transparent px-3.5 text-sm outline-none transition-interact focus:ring-4 focus:ring-brand/15"
+              style={{ borderColor: error ? "#C24B3F" : "#D9D2C2", color: INK }}
             />
-            {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+            {error && <p className="mt-2 text-xs text-danger">{error}</p>}
             <button
               onClick={sendCode}
               disabled={busy}
-              className="mt-4 h-11 w-full rounded-full text-sm font-semibold text-white disabled:opacity-60"
+              className="mt-4 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-full text-sm font-semibold text-white transition-interact hover:brightness-110 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
               style={{ background: GREEN }}
             >
+              {busy && <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />}
               {busy ? "发送中…" : "发送验证码"}
             </button>
           </>
@@ -198,13 +215,13 @@ function LoginSheet({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
               onChange={(e) => setCode(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && verify()}
               placeholder="6 位验证码"
-              className="mt-4 h-11 w-full rounded-xl border px-3 text-center text-lg tracking-[0.5em] outline-none focus:border-emerald-600"
-              style={{ borderColor: error ? "#DC2626" : "#DDD5C4" }}
+              className="mt-4 h-11 w-full rounded-xl border bg-transparent px-3 text-center text-lg tracking-[0.5em] outline-none transition-interact focus:ring-4 focus:ring-brand/15"
+              style={{ borderColor: error ? "#C24B3F" : "#D9D2C2", color: INK }}
             />
-            {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+            {error && <p className="mt-2 text-xs text-danger">{error}</p>}
             <button
               onClick={sendCode}
-              className="mt-2 text-xs underline-offset-2 hover:underline"
+              className="mt-2 cursor-pointer text-xs underline-offset-2 hover:underline"
               style={{ color: MUTED }}
             >
               重新发送
@@ -212,14 +229,16 @@ function LoginSheet({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
             <button
               onClick={verify}
               disabled={busy}
-              className="mt-4 h-11 w-full rounded-full text-sm font-semibold text-white disabled:opacity-60"
+              className="mt-4 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-full text-sm font-semibold text-white transition-interact hover:brightness-110 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
               style={{ background: GREEN }}
             >
+              {busy && <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />}
               {busy ? "登录中…" : "登录并收藏"}
             </button>
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

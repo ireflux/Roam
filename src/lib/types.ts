@@ -78,10 +78,3 @@ export const MODE_LABEL: Record<Mode, string> = {
   cycling: "骑行",
   transit: "公交/地铁",
 };
-
-export const MODE_ICON: Record<Mode, string> = {
-  driving: "🚗",
-  walking: "🚶",
-  cycling: "🚲",
-  transit: "🚇",
-};

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { MapPin, Search, X } from "lucide-react";
 
 interface Poi { name: string; address: string; lng: number; lat: number }
 
@@ -47,29 +48,45 @@ export default function SearchBox({ onPick, autoFocus, onBlur, onFocusChange }: 
 
   return (
     <div className="relative">
-      <input
-        ref={inputRef}
-        value={q}
-        onChange={(event) => {
-          const value = event.target.value;
-          setQ(value);
-          if (value.trim().length < 2) { setResults([]); setOpen(false); }
-        }}
-        onFocus={() => { setFocus(true); if (results.length > 0) setOpen(true); }}
-        onBlur={() => setFocus(false)}
-        placeholder="搜索地点…（如：外滩）"
-        className="w-full rounded-full border border-zinc-200 bg-white py-2.5 pl-4 pr-4 text-sm shadow outline-none focus:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-      />
+      <div className="relative flex items-center">
+        <Search size={16} className="pointer-events-none absolute left-4 text-faint" aria-hidden />
+        <input
+          ref={inputRef}
+          value={q}
+          onChange={(event) => {
+            const value = event.target.value;
+            setQ(value);
+            if (value.trim().length < 2) { setResults([]); setOpen(false); }
+          }}
+          onFocus={() => { setFocus(true); if (results.length > 0) setOpen(true); }}
+          onBlur={() => setFocus(false)}
+          placeholder="搜索地点…（如：外滩）"
+          className="w-full rounded-full border border-line bg-surface py-2.5 pl-10 pr-9 text-sm text-ink shadow-sm placeholder:text-faint transition-interact outline-none focus:border-brand focus:ring-4 focus:ring-brand/15"
+        />
+        {q && (
+          <button
+            onClick={() => { setQ(""); setResults([]); setOpen(false); inputRef.current?.focus(); }}
+            aria-label="清空搜索"
+            title="清空"
+            className="absolute right-2.5 flex h-6 w-6 items-center justify-center rounded-full text-faint transition-interact hover:bg-surface-soft hover:text-muted"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
       {open && results.length > 0 && (
-        <ul className="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+        <ul className="anim-scale-in absolute left-0 right-0 top-full z-30 mt-2 max-h-80 origin-top overflow-y-auto rounded-2xl border border-line bg-surface p-1.5 shadow-float">
           {results.map((poi) => (
             <li key={`${poi.lng},${poi.lat},${poi.name}`}>
               <button
-                className="flex min-h-12 w-full flex-col px-4 py-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                className="flex min-h-12 w-full items-start gap-3 rounded-xl px-3 py-2 text-left transition-interact hover:bg-brand-soft/60"
                 onClick={() => { onPick(poi.name, poi.lng, poi.lat); setQ(""); setResults([]); setOpen(false); (document.activeElement as HTMLElement)?.blur(); setFocus(false); }}
               >
-                <span className="text-sm font-medium">{poi.name}</span>
-                <span className="text-xs text-zinc-400">{poi.address}</span>
+                <MapPin size={16} className="mt-1 shrink-0 text-brand" aria-hidden />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{poi.name}</span>
+                  {poi.address && <span className="mt-0.5 block truncate text-xs text-faint">{poi.address}</span>}
+                </span>
               </button>
             </li>
           ))}

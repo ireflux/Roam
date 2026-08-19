@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { MapPin, PenLine, ArrowRight, Sparkles } from "lucide-react";
 
 interface WelcomeOverlayProps {
   onDone: () => void;
@@ -8,12 +9,12 @@ interface WelcomeOverlayProps {
 
 const STEPS = [
   {
-    emoji: "📍",
+    icon: MapPin,
     title: "地点之间，自动连线",
     desc: "添加两个以上地点，它们之间会自动规划驾车、步行或公交路线。",
   },
   {
-    emoji: "🖊️",
+    icon: PenLine,
     title: "自由手绘 + 微调",
     desc: "点「绘制」在图上直接画路线；切「改线」拖动紫色圆点，就能把路线拉到想要的位置。",
   },
@@ -34,42 +35,81 @@ export default function WelcomeOverlay({ onDone }: WelcomeOverlayProps) {
   if (!mounted) return null;
 
   const current = STEPS[step];
+  const CurrentIcon = current.icon;
+  const last = step === STEPS.length - 1;
 
   return (
     <div
       data-testid="welcome-overlay"
-      className="absolute inset-0 z-40 flex items-center justify-center bg-zinc-950/50 p-6 backdrop-blur-sm"
+      className="anim-fade-in absolute inset-0 z-40 flex items-center justify-center bg-ink/50 p-6 backdrop-blur-sm"
       onClick={(e) => e.currentTarget === e.target && onDone()}
     >
-      <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="text-center text-4xl">{current.emoji}</div>
-        <h2 className="mt-3 text-center text-lg font-semibold dark:text-zinc-100">{current.title}</h2>
-        <p className="mt-2 text-center text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
-          {current.desc}
-        </p>
-        <div className="mt-5 flex items-center justify-center gap-1.5">
-          {STEPS.map((_, i) => (
-            <span
-              key={i}
-              className={`h-1.5 rounded-full transition-all ${i === step ? "w-4 bg-emerald-600" : "w-1.5 bg-zinc-300 dark:bg-zinc-700"}`}
-            />
-          ))}
+      <div className="anim-scale-in w-full max-w-sm overflow-hidden rounded-3xl border border-line bg-surface shadow-float-lg">
+        <div className="relative px-6 pb-6 pt-8">
+          {/* 顶部装饰：旅程轨迹线（签名元素） */}
+          <JourneyMark className="absolute right-0 top-0" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-soft text-brand">
+            <CurrentIcon size={24} strokeWidth={1.75} aria-hidden />
+          </div>
+          <h2 className="mt-4 text-lg font-semibold tracking-tight">{current.title}</h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted">{current.desc}</p>
+          <div className="mt-6 flex items-center justify-between">
+            <button
+              onClick={onDone}
+              className="rounded-full px-3 py-2 text-sm text-faint transition-interact hover:text-muted"
+            >
+              跳过
+            </button>
+            <button
+              onClick={() => (last ? onDone() : setStep(step + 1))}
+              className="inline-flex items-center gap-1.5 rounded-full bg-brand px-5 py-2 text-sm font-medium text-white shadow-sm transition-interact hover:bg-brand-deep active:scale-95"
+            >
+              {last ? "开始规划" : "下一步"}
+              {last ? <Sparkles size={15} /> : <ArrowRight size={15} />}
+            </button>
+          </div>
         </div>
-        <div className="mt-5 flex items-center justify-between">
-          <button
-            onClick={onDone}
-            className="text-sm text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-          >
-            跳过
-          </button>
-          <button
-            onClick={() => (step < STEPS.length - 1 ? setStep(step + 1) : onDone())}
-            className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-medium text-white shadow hover:bg-emerald-700"
-          >
-            {step < STEPS.length - 1 ? "下一步" : "开始规划"}
-          </button>
+        <div className="flex items-end justify-between border-t border-line bg-surface-soft px-6 py-3">
+          <div className="flex items-center gap-1.5">
+            {STEPS.map((_, i) => (
+              <span
+                key={i}
+                className={`h-1.5 rounded-full transition-all duration-300 ${i === step ? "w-5 bg-brand" : "w-1.5 bg-line-strong"}`}
+              />
+            ))}
+          </div>
+          <span className="text-[11px] tracking-wide text-faint">
+            {step + 1} / {STEPS.length}
+          </span>
         </div>
       </div>
     </div>
+  );
+}
+
+/** 迷你旅程轨迹：一条弯折的路线 + 两个路点（签名元素的浓缩版）。 */
+function JourneyMark({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="120"
+      height="64"
+      viewBox="0 0 120 64"
+      fill="none"
+      aria-hidden
+    >
+      <path
+        d="M4 56 C 30 56, 26 20, 56 20 S 92 44, 116 12"
+        stroke="var(--brand)"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeDasharray="4 6"
+        className="anim-route-dash"
+        opacity="0.55"
+      />
+      <circle cx="56" cy="20" r="5" fill="var(--surface)" stroke="var(--brand)" strokeWidth="2" />
+      <circle cx="116" cy="12" r="5" fill="var(--gold)" />
+      <circle cx="24" cy="46" r="3" fill="var(--line-strong)" />
+    </svg>
   );
 }

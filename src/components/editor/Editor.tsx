@@ -3,8 +3,22 @@
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  CircleAlert,
+  Lock,
+  LockOpen,
+  MapPin,
+  MousePointer2,
+  PenLine,
+  RotateCcw,
+  RotateCw,
+  Route,
+  TriangleAlert,
+} from "lucide-react";
 import type { Mode, Position, Trip, TripStop } from "@/lib/types";
-import { MODE_ICON, MODE_LABEL } from "@/lib/types";
+import { MODE_LABEL } from "@/lib/types";
+import { MODE_ICON_COMPONENT } from "@/lib/modeIcons";
 import { useTripStore, type Tool } from "@/lib/useTripStore";
 import MapLayers from "@/components/editor/MapLayers";
 import SearchBox from "@/components/editor/SearchBox";
@@ -21,13 +35,14 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
-const TOOLS: { id: Tool; icon: string; label: string }[] = [
-  { id: "select", icon: "☝️", label: "选择" },
-  { id: "add", icon: "📍", label: "添加" },
-  { id: "draw", icon: "✏️", label: "绘制" },
-  { id: "snap", icon: "🔧", label: "改线" },
+const TOOLS: { id: Tool; icon: typeof MapPin; label: string }[] = [
+  { id: "select", icon: MousePointer2, label: "选择" },
+  { id: "add", icon: MapPin, label: "添加" },
+  { id: "draw", icon: PenLine, label: "绘制" },
+  { id: "snap", icon: Route, label: "改线" },
 ];
 const MODES: Mode[] = ["driving", "walking", "cycling", "transit"];
+
 export default function Editor({ trip }: { trip: Trip }) {
   const router = useRouter();
   const storeTrip = useTripStore((s) => s.trip);
@@ -95,7 +110,7 @@ export default function Editor({ trip }: { trip: Trip }) {
   useVertexSnap(map, tool === "snap", data, selectedSegId, onVertexMove);
 
   const pickStop = useCallback((name: string, lng: number, lat: number) => {
-    useTripStore.getState().addStopAt({ name, lat, lng });
+    useTripStore.getState().addStopAt({ name, lng, lat });
   }, []);
 
   const locateStop = useCallback(
@@ -145,7 +160,7 @@ export default function Editor({ trip }: { trip: Trip }) {
             floatingLeft={!mobile}
             onToggle={() => setMapUnlocked(mapUnlocked ? false : true)}
             tool={tool}
-            top={mobile ? 118 : 64}
+            top={mobile ? 118 : 72}
           />
         )}
 
@@ -163,26 +178,13 @@ export default function Editor({ trip }: { trip: Trip }) {
           <TipBanner text="部分路段无法规划，已降级为直线，可点击重试" position="top" onClose={() => onboarding.markHintSeen("degrade")} />
         )}
 
-
         {/* 选中段：切换出行方式 */}
         {selectedSeg && (
-          <div
-            className={`absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-white px-3 py-1.5 shadow-lg dark:bg-zinc-900 ${
-              mobile ? "bottom-[calc(42vh+16px)]" : "bottom-4"
-            }`}
-          >
-            <span className="text-sm text-zinc-600 dark:text-zinc-300">方式</span>
-            {MODES.map((m) => (
-              <button
-                key={m}
-                title={MODE_LABEL[m]}
-                onClick={() => useTripStore.getState().setMode(selectedSeg.id, m)}
-                className={`rounded-full px-2.5 py-1 text-sm ${selectedSeg.mode === m ? "bg-emerald-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
-              >
-                {MODE_ICON[m]} {MODE_LABEL[m]}
-              </button>
-            ))}
-          </div>
+          <ModeSwitcher
+            mode={selectedSeg.mode}
+            segId={selectedSeg.id}
+            mobile={mobile}
+          />
         )}
 
         {/* 行程面板：桌面侧栏 / 移动抽屉 */}
@@ -195,7 +197,7 @@ export default function Editor({ trip }: { trip: Trip }) {
             onStopDeleted={onStopDeleted}
           />
         ) : (
-          <aside className="absolute inset-y-0 right-0 z-10 w-full max-w-sm border-l border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+          <aside className="absolute inset-y-0 right-0 z-10 w-full max-w-sm border-l border-line bg-surface shadow-[-12px_0_40px_rgb(0_0_0/0.04)]">
             <TripSidebarContent
               data={data}
               activeDayId={dayId}
@@ -234,6 +236,7 @@ export default function Editor({ trip }: { trip: Trip }) {
             message="此路线已在其他窗口或设备上被编辑。选择保留哪个版本？"
             confirmText="以本地为准（覆盖）"
             cancelText="以服务器为准（放弃本地修改）"
+            danger={false}
             onConfirm={() => void resolveConflict("local")}
             onCancel={() => void resolveConflict("server")}
           />
@@ -257,26 +260,15 @@ interface ToolbarProps {
 }
 
 function Toolbar({ trip, status, mobile, failedSegs, searchFocused, onSearchFocus, onPick, onBack }: ToolbarProps) {
-  const tool = useTripStore((s) => s.tool);
-
   if (mobile) {
     return (
       <div className="absolute left-3 right-3 top-3 z-20">
         {!searchFocused && (
           <div className="mb-2 flex items-center gap-2">
-            <IconButton onClick={onBack} label="返回">←</IconButton>
-            <div className="flex overflow-hidden rounded-full bg-white shadow dark:bg-zinc-900">
-              {TOOLS.map((t) => (
-                <button
-                  key={t.id}
-                  title={t.label}
-                  onClick={() => useTripStore.getState().setTool(t.id)}
-                  className={`min-w-11 px-3 py-2.5 text-base ${tool === t.id ? "bg-emerald-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
-                >
-                  {t.icon}
-                </button>
-              ))}
-            </div>
+            <IconButton onClick={onBack} label="返回">
+              <ArrowLeft size={18} />
+            </IconButton>
+            <ToolGroup mobile />
           </div>
         )}
         {searchFocused ? (
@@ -290,34 +282,18 @@ function Toolbar({ trip, status, mobile, failedSegs, searchFocused, onSearchFocu
 
   return (
     <div className="absolute left-3 right-3 top-3 z-20 flex flex-wrap items-center gap-2 sm:left-4 sm:top-4 sm:right-[400px]">
-      <IconButton onClick={onBack} label="返回">←</IconButton>
-      <div className="flex overflow-hidden rounded-full bg-white shadow dark:bg-zinc-900">
-        {TOOLS.map((t) => (
-          <button
-            key={t.id}
-            title={t.label}
-            onClick={() => useTripStore.getState().setTool(t.id)}
-            className={`min-w-11 px-3 py-2 text-sm ${tool === t.id ? "bg-emerald-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
-          >
-            {t.icon}
-          </button>
-))}
-      </div>
+      <IconButton onClick={onBack} label="返回">
+        <ArrowLeft size={18} />
+      </IconButton>
+      <ToolGroup />
       <div className="min-w-[180px] flex-1 sm:max-w-xs">
         <SearchBox onPick={onPick} />
       </div>
       <UndoRedo />
       {status === "error" ? (
-        <button
-          onClick={() => void useTripStore.getState().save()}
-          className="ml-auto hidden rounded-full border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 shadow sm:block dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300"
-        >
-          ⚠ 保存失败 · 重试
-        </button>
+        <SaveErrorChip onClick={() => void useTripStore.getState().save()} />
       ) : (
-        <span className="ml-auto hidden rounded-full bg-white px-3 py-2 text-xs text-zinc-500 shadow sm:block dark:bg-zinc-900">
-          {status}
-        </span>
+        <StatusChip status={status} />
       )}
       {failedSegs.length > 0 && <FailedBadge count={failedSegs.length} segs={failedSegs} />}
       <ShareButton trip={trip} />
@@ -340,7 +316,7 @@ function SearchRow({ autoFocus, onBlur, onFocusChange, onPick }: { autoFocus?: b
       {focused && (
         <button
           onClick={() => report(false)}
-          className="shrink-0 rounded-full bg-white px-3 py-2 text-sm text-zinc-600 shadow dark:bg-zinc-900 dark:text-zinc-300"
+          className="shrink-0 rounded-full border border-line bg-surface px-3 py-2.5 text-sm text-muted shadow-sm transition-interact hover:text-ink"
         >
           完成
         </button>
@@ -348,6 +324,7 @@ function SearchRow({ autoFocus, onBlur, onFocusChange, onPick }: { autoFocus?: b
     </div>
   );
 }
+
 /* ------------------------------- 小组件 ------------------------------- */
 
 function IconButton({ children, onClick, label }: { children: React.ReactNode; onClick: () => void; label?: string }) {
@@ -355,35 +332,97 @@ function IconButton({ children, onClick, label }: { children: React.ReactNode; o
     <button
       onClick={onClick}
       title={label}
-      className="flex h-10 min-w-10 shrink-0 items-center justify-center rounded-full bg-white px-3 text-sm shadow hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+      aria-label={label}
+      className="flex h-10 min-w-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line bg-surface px-3 text-ink shadow-sm transition-interact hover:border-line-strong hover:shadow-float active:scale-95"
     >
       {children}
     </button>
   );
 }
 
+function ToolGroup({ mobile }: { mobile?: boolean }) {
+  const tool = useTripStore((s) => s.tool);
+  return (
+    <div className="flex overflow-hidden rounded-full border border-line bg-surface p-1 shadow-sm">
+      {TOOLS.map((t) => {
+        const Icon = t.icon;
+        const active = tool === t.id;
+        return (
+          <button
+            key={t.id}
+            title={t.label}
+            aria-label={t.label}
+            aria-pressed={active}
+            onClick={() => useTripStore.getState().setTool(t.id)}
+            className={`transition-interact inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full font-medium ${
+              mobile ? "min-w-11 px-2.5 py-2" : "px-3 py-2 text-sm"
+            } ${
+              active
+                ? "bg-brand text-white shadow-sm"
+                : "text-muted hover:bg-brand-soft/70 hover:text-brand"
+            }`}
+          >
+            <Icon size={16} strokeWidth={active ? 2.25 : 2} aria-hidden />
+            {!mobile && <span>{t.label}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function UndoRedo() {
   const canUndo = useTripStore((s) => s.canUndo);
   const canRedo = useTripStore((s) => s.canRedo);
+  const btn = (title: string, disabled: boolean, onClick: () => void, children: React.ReactNode) => (
+    <button
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full text-muted transition-interact hover:bg-brand-soft/70 hover:text-brand disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-muted"
+    >
+      {children}
+    </button>
+  );
   return (
-    <div className="flex overflow-hidden rounded-full bg-white shadow dark:bg-zinc-900">
-      <button
-        title="撤销 (Ctrl+Z)"
-        onClick={() => useTripStore.getState().undo()}
-        disabled={!canUndo}
-        className="px-3 py-2 text-sm disabled:opacity-40 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-      >
-        ↩
-      </button>
-      <button
-        title="重做"
-        onClick={() => useTripStore.getState().redo()}
-        disabled={!canRedo}
-        className="px-3 py-2 text-sm disabled:opacity-40 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-      >
-        ↪
-      </button>
+    <div className="flex items-center gap-0.5 rounded-full border border-line bg-surface px-0.5 shadow-sm">
+      {btn("撤销 (Ctrl+Z)", !canUndo, () => useTripStore.getState().undo(), <RotateCcw size={16} />)}
+      {btn("重做", !canRedo, () => useTripStore.getState().redo(), <RotateCw size={16} />)}
     </div>
+  );
+}
+
+/** 保存状态 chip：圆点 + 文案，颜色随状态切换。 */
+function StatusChip({ status }: { status: string }) {
+  const dot =
+    status === "saved"
+      ? "bg-brand"
+      : status === "saving"
+        ? "animate-pulse bg-amber"
+        : status === "dirty"
+          ? "bg-line-strong"
+          : "bg-danger";
+  return (
+    <span
+      data-testid="save-status"
+      className="hidden items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-2 text-xs text-muted shadow-sm sm:flex"
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden />
+      {status === "saved" ? "已保存" : status === "saving" ? "保存中…" : status === "dirty" ? "待保存…" : status === "error" ? "保存失败" : ""}
+    </span>
+  );
+}
+
+function SaveErrorChip({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="hidden cursor-pointer items-center gap-1.5 rounded-full border border-danger/30 bg-danger-soft px-3 py-2 text-xs font-medium text-danger shadow-sm transition-interact hover:bg-danger/10 sm:flex"
+    >
+      <TriangleAlert size={14} aria-hidden />
+      保存失败 · 重试
+    </button>
   );
 }
 
@@ -394,23 +433,24 @@ function FailedBadge({ count, segs }: { count: number; segs: { id: string; fromS
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="rounded-full bg-amber-500 px-3 py-2 text-sm font-medium text-white shadow hover:bg-amber-600"
+        className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-amber px-3 py-2 text-xs font-medium text-white shadow-sm transition-interact hover:brightness-105 active:scale-95"
       >
-        ⚠ {count} 段降级
+        <CircleAlert size={14} aria-hidden />
+        {count} 段降级
       </button>
       {open && (
-        <div className="absolute right-0 top-11 z-30 w-64 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-          <p className="px-2 pb-1 pt-1 text-xs text-zinc-400">规划失败降级为直线，可重试</p>
-          <ul className="max-h-56 space-y-1 overflow-y-auto">
+        <div className="anim-scale-in absolute right-0 top-11 z-30 w-72 origin-top-right rounded-2xl border border-line bg-surface p-2 shadow-float-lg">
+          <p className="px-2 pb-1 pt-1 text-xs text-faint">规划失败降级为直线，可重试</p>
+          <ul className="max-h-56 space-y-0.5 overflow-y-auto">
             {segs.map((seg) => {
               const from = data.stops.find((s) => s.id === seg.fromStop)?.name ?? "起点";
               const to = data.stops.find((s) => s.id === seg.toStop)?.name ?? "终点";
               return (
-                <li key={seg.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                  <span className="min-w-0 flex-1 truncate text-sm text-zinc-600 dark:text-zinc-300">{from} → {to}</span>
+                <li key={seg.id} className="flex items-center gap-2 rounded-xl px-2 py-1.5 transition-interact hover:bg-surface-soft">
+                  <span className="min-w-0 flex-1 truncate text-sm text-muted">{from} → {to}</span>
                   <button
                     onClick={() => useTripStore.getState().retrySegment(seg.id)}
-                    className="shrink-0 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs text-white hover:bg-emerald-700"
+                    className="shrink-0 cursor-pointer rounded-full bg-brand px-2.5 py-0.5 text-xs font-medium text-white transition-interact hover:bg-brand-deep"
                   >
                     重试
                   </button>
@@ -425,17 +465,50 @@ function FailedBadge({ count, segs }: { count: number; segs: { id: string; fromS
 }
 
 function LockChip({ locked, floatingLeft, onToggle, tool, top }: { locked: boolean; floatingLeft?: boolean; onToggle: () => void; tool: Tool; top: number }) {
+  const LockIcon = locked ? Lock : LockOpen;
   return (
     <button
       onClick={onToggle}
       title={locked ? "地图已锁定：单指用于绘制/改线，双指缩放；点击解锁平移" : "地图平移已解锁，点击重新锁定"}
-      className={`absolute z-30 flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-medium shadow dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 ${
-        floatingLeft ? "left-3" : "right-3"
+      className={`absolute z-30 flex cursor-pointer items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-2 text-xs font-medium text-ink shadow-float transition-interact hover:shadow-float-lg ${
+        floatingLeft ? "left-4" : "right-3"
       }`}
       style={{ top }}
     >
-      {locked ? "🔒 已锁定" : "🔓 已解锁"}
-      <span className="hidden text-zinc-400 sm:inline">{tool === "draw" ? "绘制中" : "改线中"}</span>
+      <LockIcon size={13} className={locked ? "text-brand" : "text-muted"} aria-hidden />
+      <span>{locked ? "已锁定" : "已解锁"}</span>
+      <span className="hidden text-faint sm:inline">{tool === "draw" ? "绘制中" : "改线中"}</span>
     </button>
+  );
+}
+
+function ModeSwitcher({ mode, segId, mobile }: { mode: Mode; segId: string; mobile: boolean }) {
+  return (
+    <div
+      className={`anim-scale-in absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-line bg-surface/90 p-1 shadow-float-lg backdrop-blur-md ${
+        mobile ? "bottom-[calc(42vh+16px)]" : "bottom-4"
+      }`}
+    >
+      <span className="px-2 text-xs text-faint">方式</span>
+      {MODES.map((m) => {
+        const Icon = MODE_ICON_COMPONENT[m];
+        const active = mode === m;
+        return (
+          <button
+            key={m}
+            title={MODE_LABEL[m]}
+            aria-label={MODE_LABEL[m]}
+            aria-pressed={active}
+            onClick={() => useTripStore.getState().setMode(segId, m)}
+            className={`transition-interact inline-flex cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm ${
+              active ? "bg-brand text-white shadow-sm" : "text-muted hover:bg-surface-soft hover:text-ink"
+            }`}
+          >
+            <Icon size={15} strokeWidth={active ? 2.25 : 2} aria-hidden />
+            <span className="hidden sm:inline">{MODE_LABEL[m]}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }

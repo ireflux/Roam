@@ -76,19 +76,19 @@ export function useDayWeather(points: ReadonlyArray<WeatherPoint>): Record<strin
 
 /** 天气徽标（加载前后占用一致高度，避免布局跳动）。 */
 export function WeatherBadge({ info }: { info: DayWeatherInfo | null | undefined }) {
-  if (!info) return <span className="inline-flex h-5 items-center text-xs text-zinc-400" />;
+  if (!info) return <span className="inline-flex h-5 items-center text-xs text-faint" />;
   if (info.forecast !== undefined) {
     const text = info.forecast
       ? `${info.forecast.dayWeather} ${info.forecast.tempLow}~${info.forecast.tempHigh}°`
       : "暂无预报";
     return (
-      <span className="inline-flex h-5 items-center text-xs text-zinc-500 dark:text-zinc-400" title={info.forecast?.nightWeather ? `夜间 ${info.forecast.nightWeather}` : undefined}>
+      <span className="inline-flex h-5 items-center text-xs text-muted" title={info.forecast?.nightWeather ? `夜间 ${info.forecast.nightWeather}` : undefined}>
         {info.city} · {text}
       </span>
     );
   }
   return (
-    <span className="inline-flex h-5 items-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex h-5 items-center text-xs text-muted">
       {info.city ?? ""}
       {info.city ? " · " : ""}
       {info.weather ?? ""}

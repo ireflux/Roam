@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { CalendarDays, GripVertical, Pencil, Plus, Trash2, X } from "lucide-react";
 import type { TripData, TripStop } from "@/lib/types";
 import { useTripStore } from "@/lib/useTripStore";
 import { useDayWeather, WeatherBadge, weatherPoints } from "@/components/weather/useDayWeather";
@@ -45,7 +46,7 @@ export default function TripSidebarContent({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="shrink-0 border-b border-zinc-200 px-4 pb-2 pt-3 dark:border-zinc-800">
+      <header className="shrink-0 border-b border-line px-4 pb-3 pt-3">
         <div className="flex items-start gap-2">
           <TripTitle />
           <DeleteTripButton />
@@ -102,7 +103,7 @@ function TripTitle() {
         placeholder="路线标题"
         aria-label="路线标题"
         maxLength={100}
-        className="w-full flex-1 bg-transparent text-lg font-semibold outline-none placeholder:text-zinc-400 dark:text-zinc-100"
+        className="w-full flex-1 bg-transparent text-lg font-semibold outline-none placeholder:text-faint"
       />
     );
   }
@@ -112,24 +113,16 @@ function TripTitle() {
       data-testid="trip-title-button"
       onClick={startEdit}
       title="点击编辑标题"
-      className="group flex w-full flex-1 items-baseline gap-1 bg-transparent text-left text-lg font-semibold text-zinc-900 outline-none hover:underline underline-offset-4 dark:text-zinc-100"
+      className="group flex w-full flex-1 cursor-pointer items-baseline gap-1.5 bg-transparent text-left text-lg font-semibold tracking-tight outline-none"
     >
-      <span className={trip?.title?.trim() ? "" : "text-zinc-400 dark:text-zinc-500"}>
+      <span className={trip?.title?.trim() ? "" : "text-faint"}>
         {trip?.title?.trim() || "路线标题"}
       </span>
-      <svg
-        width="13"
-        height="13"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        className="shrink-0 text-zinc-300 opacity-0 transition group-hover:opacity-100 dark:text-zinc-600"
+      <Pencil
+        size={13}
+        className="shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-100"
         aria-hidden
-      >
-        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-      </svg>
+      />
     </button>
   );
 }
@@ -149,13 +142,10 @@ function DeleteTripButton() {
       <button
         onClick={() => setOpen(true)}
         title="删除这条路线"
-        className="shrink-0 rounded-full p-2 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
+        aria-label="删除这条路线"
+        className="shrink-0 cursor-pointer rounded-full p-2 text-faint transition-interact hover:bg-danger-soft hover:text-danger"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M3 6h18" />
-          <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
-          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-        </svg>
+        <Trash2 size={14} />
       </button>
       <ConfirmDialog
         open={open}
@@ -175,8 +165,8 @@ function TripOverview({ data }: { data: TripData }) {
   if (summary.distanceM > 0) parts.push(formatDistance(summary.distanceM));
   if (summary.durationMin > 0) parts.push(`约 ${formatDuration(summary.durationMin)}`);
   return (
-    <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500" aria-label="行程总览">
-      {parts.join(" · ")}
+    <p className="mt-1.5 text-xs text-faint" aria-label="行程总览">
+      {parts.join("  ·  ")}
     </p>
   );
 }
@@ -190,11 +180,11 @@ function DayStatsLine({ data, dayId }: { data: TripData; dayId: string }) {
   if (summary.distanceM > 0) parts.push(formatDistance(summary.distanceM));
   if (summary.durationMin > 0) parts.push(`约 ${formatDuration(summary.durationMin)}`);
   return (
-    <div className="mt-2 px-0.5 text-xs">
-      <span className="text-zinc-400 dark:text-zinc-500">{parts.join(" · ")}</span>
+    <div className="mt-2.5 px-0.5 text-xs">
+      <span className="text-faint">{parts.join("  ·  ")}</span>
       {density.warn && (
-        <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-          ⚠ {density.reasons[0]}
+        <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-soft px-2 py-0.5 font-medium text-amber">
+          {density.reasons[0]}
         </span>
       )}
     </div>
@@ -222,10 +212,10 @@ function DayTabs({
   const pendingDayStopCount = data.stops.filter((s) => s.dayId === pendingDeleteId).length;
 
   const tabClass = (active: boolean) =>
-    `flex items-center rounded-full px-3 py-1.5 text-sm ${
+    `flex items-center rounded-full px-3 py-1.5 text-sm transition-interact ${
       active
-        ? "bg-emerald-600 text-white"
-        : "border border-zinc-200 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
+        ? "bg-brand text-white shadow-sm"
+        : "border border-line text-muted hover:border-brand/40 hover:text-brand"
     } ${mobile ? "" : "cursor-grab active:cursor-grabbing"}`;
 
   return (
@@ -269,7 +259,7 @@ function DayTabs({
                 : undefined
             }
             title={mobile ? "长按排序 · 双击改名" : "双击改名 · 拖拽排序"}
-            className={`${tabClass(d.id === dayId)} ${mobile ? "" : "outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"}`}
+            className={`${tabClass(d.id === dayId)} ${mobile ? "" : "outline-none focus-visible:ring-2 focus-visible:ring-brand/40"}`}
           >
             {d.name ?? `第 ${i + 1} 天`}
             <span className="ml-1 text-xs opacity-70">{data.stops.filter((s) => s.dayId === d.id).length}</span>
@@ -291,7 +281,7 @@ function DayTabs({
                     setDateEditId(null);
                     useTripStore.getState().setDayDate(d.id, e.target.value || null);
                   }}
-                  className="w-[7.5rem] rounded-lg border border-emerald-500 px-1 py-0.5 text-xs outline-none dark:bg-zinc-900"
+                  className="w-[7.5rem] rounded-lg border border-brand px-1 py-0.5 text-xs outline-none focus:ring-2 focus:ring-brand/30"
                 />
                 <button
                   aria-label="清除日期"
@@ -302,9 +292,9 @@ function DayTabs({
                     useTripStore.getState().setDayDate(d.id, null);
                     setDateEditId(null);
                   }}
-                  className="rounded-full px-1 text-zinc-400 hover:text-red-500"
+                  className="cursor-pointer rounded-full px-1 text-faint transition-interact hover:text-danger"
                 >
-                  ✕
+                  <X size={12} />
                 </button>
               </span>
             ) : (
@@ -317,11 +307,15 @@ function DayTabs({
                   e.stopPropagation();
                   setDateEditId(d.id);
                 }}
-                className={`ml-1 rounded-full px-1 text-xs leading-none ${
-                  d.id === dayId ? "text-white/80 hover:bg-white/20" : "text-zinc-400 hover:bg-emerald-50 hover:text-emerald-600 dark:text-zinc-500 dark:hover:bg-zinc-800"
+                className={`ml-1 cursor-pointer rounded-full p-0.5 transition-interact ${
+                  d.id === dayId ? "text-white/85 hover:bg-white/20" : "text-faint hover:bg-brand-soft hover:text-brand"
                 }`}
               >
-                {d.date ? d.date.slice(5).replace("-", ".") : "📅"}
+                {d.date ? (
+                  <span className="text-xs leading-none">{d.date.slice(5).replace("-", ".")}</span>
+                ) : (
+                  <CalendarDays size={13} />
+                )}
               </button>
             )}
             {data.days.length > 1 && (
@@ -334,13 +328,13 @@ function DayTabs({
                 }}
                 onDoubleClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
-                className={`ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] leading-none ${
+                className={`ml-1 inline-flex h-4 w-4 cursor-pointer items-center justify-center rounded-full transition-interact ${
                   d.id === dayId
-                    ? "text-white/70 hover:bg-white/20 hover:text-white"
-                    : "text-zinc-300 hover:bg-red-50 hover:text-red-500 dark:text-zinc-600 dark:hover:bg-red-950 dark:hover:text-red-400"
+                    ? "text-white/70 hover:bg-white/25 hover:text-white"
+                    : "text-faint hover:bg-danger-soft hover:text-danger"
                 }`}
               >
-                ✕
+                <X size={12} />
               </button>
             )}
           </div>
@@ -349,9 +343,11 @@ function DayTabs({
       <button
         onClick={() => useTripStore.getState().addDay()}
         title="添加一天"
-        className="rounded-full border border-dashed border-zinc-300 px-3 py-1.5 text-sm text-zinc-500 hover:border-emerald-500 hover:text-emerald-600 dark:border-zinc-700"
+        aria-label="添加一天"
+        className="flex cursor-pointer items-center gap-1 rounded-full border border-dashed border-line-strong px-3 py-1.5 text-sm text-muted transition-interact hover:border-brand hover:text-brand"
       >
-        + 天
+        <Plus size={13} />
+        <span>天</span>
       </button>
       <ConfirmDialog
         open={pendingDeleteId !== null}
@@ -386,7 +382,7 @@ function DayNameEditor({ dayId, fallback, onDone }: { dayId: string; fallback: s
       onKeyDown={(e) => {
         if (e.key === "Enter") commit();
       }}
-      className="w-28 rounded-full border border-emerald-500 px-3 py-1.5 text-sm outline-none dark:bg-zinc-900"
+      className="w-28 rounded-full border border-brand px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
     />
   );
 }
@@ -395,11 +391,51 @@ function DayNameEditor({ dayId, fallback, onDone }: { dayId: string; fallback: s
 
 function EmptyStops() {
   return (
-    <div className="mt-10 text-center text-sm text-zinc-400">
-      <p className="text-3xl">📍</p>
-      <p className="mt-2">用上方搜索框，或切到「添加」后点击地图</p>
-      <p className="mt-1 text-xs">添加两个以上地点后会自动生成路线</p>
+    <div className="mt-12 text-center">
+      <JourneyLine className="mx-auto" />
+      <p className="mt-4 text-sm font-medium text-muted">从地图开始你的旅程</p>
+      <p className="mt-1 text-xs leading-relaxed text-faint">
+        用上方搜索框，或切到「添加」后点击地图
+        <br />
+        两个地点之间会自动生成路线
+      </p>
     </div>
+  );
+}
+
+/** 空状态插画：一段延伸到远方的虚线旅程轨迹（签名元素）。 */
+function JourneyLine({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="172"
+      height="64"
+      viewBox="0 0 172 64"
+      fill="none"
+      aria-hidden
+    >
+      <path
+        d="M6 52 C 30 52, 24 16, 54 16 S 92 40 116 30 S 150 14 166 14"
+        stroke="var(--line-strong)"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeDasharray="2 7"
+        opacity="0.8"
+      />
+      <circle cx="54" cy="16" r="5.5" fill="var(--surface)" stroke="var(--brand)" strokeWidth="2" />
+      <text
+        x="54"
+        y="19.5"
+        textAnchor="middle"
+        fontSize="9"
+        fontWeight="600"
+        fill="var(--brand)"
+      >
+        1
+      </text>
+      <circle cx="116" cy="30" r="5" fill="var(--surface)" stroke="var(--brand)" strokeWidth="2" opacity="0.7" />
+      <circle cx="166" cy="14" r="5" fill="var(--gold)" />
+    </svg>
   );
 }
 
@@ -430,42 +466,51 @@ function StopList({
   };
 
   return (
-    <ul
-      ref={listRef}
-      className="relative space-y-2"
-      {...(mobile
-        ? {
-            onPointerMove: reorder.onPointerMove,
-            onPointerUp: reorder.onPointerUp,
-            onPointerCancel: reorder.onPointerCancel,
-          }
-        : {})}
-    >
-      {stops.map((stop, i) => (
-        <StopCard
-          key={stop.id}
-          stop={stop}
-          index={i}
-          mobile={mobile}
-          dragging={reorder.dragging && reorder.from === i}
-          dragDelta={reorder.dragging && reorder.from === i ? reorder.deltaY : 0}
-          onHandlePointerDown={mobile ? (e) => reorder.onPointerDown(e, i, { immediate: true }) : undefined}
-          onLocateStop={locate}
-          onStopDeleted={onStopDeleted}
-        />
-      ))}
-      {reorder.hover && reorder.dragging && (
-        <li aria-hidden className="pointer-events-none absolute left-3 right-3 z-30" style={{ top: reorder.hover.top }}>
-          <div className="h-0.5 rounded-full bg-emerald-500" />
-        </li>
-      )}
-    </ul>
+    <div className="relative mt-3">
+      {/* 时间线轨道：贯穿整列路点的连接线 */}
+      <span
+        className="absolute bottom-1 left-[13px] top-2 w-px bg-gradient-to-b from-brand/50 via-line to-line"
+        aria-hidden
+      />
+      <ul
+        ref={listRef}
+        className="relative space-y-2.5"
+        {...(mobile
+          ? {
+              onPointerMove: reorder.onPointerMove,
+              onPointerUp: reorder.onPointerUp,
+              onPointerCancel: reorder.onPointerCancel,
+            }
+          : {})}
+      >
+        {stops.map((stop, i) => (
+          <StopCard
+            key={stop.id}
+            stop={stop}
+            index={i}
+            total={stops.length}
+            mobile={mobile}
+            dragging={reorder.dragging && reorder.from === i}
+            dragDelta={reorder.dragging && reorder.from === i ? reorder.deltaY : 0}
+            onHandlePointerDown={mobile ? (e) => reorder.onPointerDown(e, i, { immediate: true }) : undefined}
+            onLocateStop={locate}
+            onStopDeleted={onStopDeleted}
+          />
+        ))}
+        {reorder.hover && reorder.dragging && (
+          <li aria-hidden className="pointer-events-none absolute left-3 right-3 z-30" style={{ top: reorder.hover.top }}>
+            <div className="h-0.5 rounded-full bg-brand" />
+          </li>
+        )}
+      </ul>
+    </div>
   );
 }
 
 function StopCard({
   stop,
   index,
+  total,
   mobile = false,
   dragging = false,
   dragDelta = 0,
@@ -475,6 +520,7 @@ function StopCard({
 }: {
   stop: TripStop;
   index: number;
+  total: number;
   mobile?: boolean;
   dragging?: boolean;
   dragDelta?: number;
@@ -492,131 +538,128 @@ function StopCard({
     setEditing(false);
   };
 
-  const cardClass = `group rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950 ${
-    dragging ? "z-10 scale-[1.02] shadow-2xl ring-2 ring-emerald-500" : "cursor-pointer"
-  }`;
+  const isLast = index === total - 1;
 
   return (
     <li
       data-stop-id={stop.id}
       data-reorder-index={index}
-      className={`${cardClass} ${dragging ? "pointer-events-none" : ""}`}
+      className={`relative pl-10 ${dragging ? "pointer-events-none" : ""}`}
       style={dragging ? { transform: `translateY(${dragDelta}px)` } : undefined}
     >
-      {editing ? (
-        <div className="space-y-2">
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="地点名称"
-            className="w-full rounded-lg border border-zinc-200 px-2 py-1 text-sm outline-none focus:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-900"
-          />
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="备注（营业时间、预约、推荐菜…）"
-            className="w-full rounded-lg border border-zinc-200 px-2 py-1 text-xs outline-none focus:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-900"
-          />
-          <div className="flex items-center gap-2">
-            <button onClick={commit} className="rounded-full bg-emerald-600 px-3 py-1 text-xs text-white hover:bg-emerald-700">
-              保存
-            </button>
-            <button onClick={() => setEditing(false)} className="rounded-full px-3 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-              取消
-            </button>
-            {days.length > 1 && (
-              <select
-                value={stop.dayId}
-                onChange={(e) => {
-                  useTripStore.getState().moveStopToDay(stop.id, e.target.value);
-                  setEditing(false);
-                }}
-                className="ml-auto rounded-lg border border-zinc-200 px-2 py-1 text-xs outline-none dark:border-zinc-700 dark:bg-zinc-900"
+      {/* 路点圆点：编号即顺序；终点用金色（与分享页签名一致） */}
+      <span
+        className={`absolute left-0 top-3 flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm transition-colors ${
+          isLast ? "bg-gold text-white" : "bg-brand text-white"
+        }`}
+        aria-hidden
+      >
+        {index + 1}
+      </span>
+      <div
+        className={`group rounded-2xl border bg-surface px-3 py-2.5 shadow-card transition-all ${
+          dragging
+            ? "z-10 scale-[1.02] border-brand/40 shadow-float-lg ring-2 ring-brand/30"
+            : "border-line hover:border-brand/30 hover:shadow-float"
+        }`}
+      >
+        {editing ? (
+          <div className="space-y-2">
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="地点名称"
+              className="w-full rounded-lg border border-line px-2 py-1.5 text-sm outline-none transition-interact focus:border-brand focus:ring-2 focus:ring-brand/20"
+            />
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="备注（营业时间、预约、推荐菜…）"
+              className="w-full rounded-lg border border-line px-2 py-1.5 text-xs outline-none transition-interact focus:border-brand focus:ring-2 focus:ring-brand/20"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={commit}
+                className="cursor-pointer rounded-full bg-brand px-3 py-1 text-xs font-medium text-white transition-interact hover:bg-brand-deep"
               >
-                {days.map((d, i) => (
-                  <option key={d.id} value={d.id}>
-                    第 {i + 1} 天
-                  </option>
-                ))}
-              </select>
-            )}
+                保存
+              </button>
+              <button
+                onClick={() => setEditing(false)}
+                className="cursor-pointer rounded-full px-3 py-1 text-xs text-muted transition-interact hover:bg-surface-soft hover:text-ink"
+              >
+                取消
+              </button>
+              {days.length > 1 && (
+                <select
+                  value={stop.dayId}
+                  onChange={(e) => {
+                    useTripStore.getState().moveStopToDay(stop.id, e.target.value);
+                    setEditing(false);
+                  }}
+                  className="ml-auto cursor-pointer rounded-lg border border-line bg-surface px-2 py-1 text-xs outline-none focus:border-brand"
+                >
+                  {days.map((d, i) => (
+                    <option key={d.id} value={d.id}>
+                      第 {i + 1} 天
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
-        </div>
-      ) : (
-        <div
-          className="flex items-center gap-3"
-          onClick={() => onLocateStop?.(stop)}
-        >
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-semibold text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
-            {index + 1}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm">{stop.name || "未命名地点"}</div>
-            {stop.note && <div className="truncate text-xs text-zinc-400">{stop.note}</div>}
-          </div>
-          {mobile ? (
-            <>
+        ) : (
+          <div className="flex cursor-pointer items-center gap-2" onClick={() => onLocateStop?.(stop)}>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium">{stop.name || "未命名地点"}</div>
+              {stop.note && <div className="mt-0.5 truncate text-xs text-faint">{stop.note}</div>}
+            </div>
+            {mobile ? (
               <button
                 aria-label="拖拽排序"
                 onPointerDown={onHandlePointerDown}
                 onPointerMove={(e) => e.stopPropagation()}
                 title="按住拖动排序"
-                className="shrink-0 touch-none cursor-grab rounded-full p-1.5 text-zinc-400 hover:bg-zinc-100 active:cursor-grabbing dark:hover:bg-zinc-800"
+                className="shrink-0 cursor-grab touch-none rounded-full p-1.5 text-faint transition-interact hover:bg-surface-soft hover:text-muted active:cursor-grabbing"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                  <circle cx="9" cy="5" r="1.6" />
-                  <circle cx="15" cy="5" r="1.6" />
-                  <circle cx="9" cy="12" r="1.6" />
-                  <circle cx="15" cy="12" r="1.6" />
-                  <circle cx="9" cy="19" r="1.6" />
-                  <circle cx="15" cy="19" r="1.6" />
-                </svg>
+                <GripVertical size={15} />
               </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEditing(true);
-                }}
-                title="编辑"
-                className="shrink-0 rounded-full p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-emerald-600 dark:hover:bg-zinc-800"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-                </svg>
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEditing(true);
-                }}
-                title="编辑"
-                aria-label={`编辑 ${stop.name || "未命名地点"}`}
-                className="shrink-0 rounded-full p-1.5 text-zinc-400 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 hover:bg-zinc-100 hover:text-emerald-600 dark:hover:bg-zinc-800"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-                </svg>
-              </button>
-              <span className="text-xs text-zinc-300">拖拽排序</span>
-            </>
-          )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              useTripStore.getState().removeStop(stop.id);
-              onStopDeleted?.(stop);
-            }}
-            title="删除"
-            className="shrink-0 rounded-full px-2 py-1 text-xs text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
-          >
-            ✕
-          </button>
-        </div>
-      )}
+            ) : (
+              <span className="text-[10px] text-faint opacity-0 transition-opacity group-hover:opacity-100 select-none">
+                拖拽排序
+              </span>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditing(true);
+              }}
+              title="编辑"
+              aria-label={`编辑 ${stop.name || "未命名地点"}`}
+              className={`shrink-0 cursor-pointer rounded-full p-1.5 text-faint transition-interact hover:bg-brand-soft hover:text-brand ${
+                mobile ? "" : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+              }`}
+            >
+              <Pencil size={14} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                useTripStore.getState().removeStop(stop.id);
+                onStopDeleted?.(stop);
+              }}
+              title="删除"
+              aria-label={`删除 ${stop.name || "未命名地点"}`}
+              className={`shrink-0 cursor-pointer rounded-full p-1.5 text-faint transition-interact hover:bg-danger-soft hover:text-danger ${
+                mobile ? "" : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+              }`}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+      </div>
     </li>
   );
 }
