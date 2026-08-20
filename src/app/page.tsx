@@ -29,6 +29,13 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
+  // 预热历史路线的编辑器页：列表加载后即后台发起 RSC 请求，Neon compute 提前唤醒，
+  // 避免点击后才冷启动（5-15s）。prefetch 失败静默，不影响页面。
+  useEffect(() => {
+    recent.forEach((t) => router.prefetch(`/editor/${t.id}`));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recent]);
+
   const notify = (text: string) => setToast({ key: Date.now(), text });
 
   async function createTrip() {
@@ -167,7 +174,11 @@ export default function Home() {
             {recent.map((t) => (
               <li key={t.id}>
                 <div className="group flex w-full cursor-pointer items-center justify-between rounded-2xl border border-line bg-surface px-5 py-3.5 shadow-card transition-all hover:-translate-y-px hover:border-brand/30 hover:shadow-float">
-                  <div className="flex min-w-0 items-center gap-4" onClick={() => router.push(`/editor/${t.id}`)}>
+                  <div
+                    className="flex min-w-0 items-center gap-4"
+                    onClick={() => router.push(`/editor/${t.id}`)}
+                    onMouseEnter={() => router.prefetch(`/editor/${t.id}`)}
+                  >
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">
                       <Route size={18} strokeWidth={1.75} aria-hidden />
                     </span>
