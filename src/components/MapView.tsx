@@ -10,10 +10,12 @@ export const DEFAULT_ZOOM = 4;
 // 生产环境安全配置（skill 最佳实践）：
 // 若配置 NEXT_PUBLIC_AMAP_PROXY=true，前端只声明 serviceHost 指向同源代理，
 // securityJsCode 仅存在于服务端（AMAP_SECURITY_JS_CODE），由 /api/amap-proxy 追加，绝不暴露到浏览器。
+// 官方要求代理路径以 /_AMapService 作为固定一级路由（不可省略或修改），故 serviceHost 以其结尾；
+// 路由层剥离该前缀并按路径分发到 restapi/webapi/fmap01 三个上游。
 // 仅在未开启代理时使用 NEXT_PUBLIC_AMAP_SECURITY_JS_CODE（开发环境明文，2021-12-02 后创建的 key 必须）。
 function applySecurityConfig() {
   if (process.env.NEXT_PUBLIC_AMAP_PROXY === "true") {
-    window._AMapSecurityConfig = { serviceHost: "/api/amap-proxy" };
+    window._AMapSecurityConfig = { serviceHost: "/api/amap-proxy/_AMapService" };
   } else if (process.env.NEXT_PUBLIC_AMAP_SECURITY_JS_CODE) {
     window._AMapSecurityConfig = { securityJsCode: process.env.NEXT_PUBLIC_AMAP_SECURITY_JS_CODE };
   }
