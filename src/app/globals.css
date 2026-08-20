@@ -169,8 +169,11 @@ body {
 }
 
 @keyframes roam-dash {
+  from {
+    stroke-dashoffset: 0;
+  }
   to {
-    stroke-dashoffset: -24;
+    stroke-dashoffset: -268;
   }
 }
 
@@ -187,7 +190,7 @@ body {
   animation: roam-toast-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .anim-route-dash {
-  animation: roam-dash 2.4s linear infinite;
+  animation: roam-dash 6s linear infinite;
 }
 
 /* 交互过渡基调：150–200ms 统一节奏 */
