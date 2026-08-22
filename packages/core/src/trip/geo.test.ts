@@ -1,0 +1,90 @@
+import { describe, expect, it } from "vitest";
+import { pathLengthM, pointAtFraction, roughDistanceM, simplifyLine, simplifyVertexIndices, uniformSample } from "./geo";
+import type { Position } from "../types";
+
+describe("simplifyVertexIndices", () => {
+  it("超出容量时均匀采样并保留首尾", () => {
+    const idx = simplifyVertexIndices(100, 10);
+    expect(idx).toHaveLength(10);
+    expect(idx[0]).toBe(0);
+    expect(idx[9]).toBe(99);
+    expect(idx).toEqual([0, 11, 22, 33, 44, 55, 66, 77, 88, 99]);
+  });
+
+  it("容量内原样返回", () => {
+    expect(simplifyVertexIndices(5, 10)).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+
+describe("uniformSample", () => {
+  it("保留首尾且数量不超过上限", () => {
+    const coords: Position[] = Array.from({ length: 50 }, (_, i) => [i, i]);
+    const out = uniformSample(coords, 10);
+    expect(out).toHaveLength(10);
+    expect(out[0]).toEqual([0, 0]);
+    expect(out[9]).toEqual([49, 49]);
+  });
+});
+
+describe("simplifyLine", () => {
+  it("共线点被压缩到两个端点", () => {
+    const coords: Position[] = Array.from({ length: 100 }, (_, i) => [i * 0.001, 0]);
+    const out = simplifyLine(coords, { toleranceM: 10 });
+    expect(out).toHaveLength(2);
+  });
+
+  it("折线保留转折点", () => {
+    const coords: Position[] = [[0, 0], [0.001, 0.001], [0.002, 0], [0.003, 0.001], [0.004, 0]];
+    const out = simplifyLine(coords, { toleranceM: 1 });
+    expect(out.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("空/短输入安全", () => {
+    expect(simplifyLine([])).toEqual([]);
+    expect(simplifyLine([[1, 2], [3, 4]])).toEqual([[1, 2], [3, 4]]);
+  });
+});
+
+describe("roughDistanceM", () => {
+  it("已知距离", () => {
+    const d = roughDistanceM([104.1954, 35.8617], [104.1954, 35.8717]);
+    expect(d).toBeGreaterThan(1100);
+    expect(d).toBeLessThan(1200);
+  });
+});
+
+describe("pathLengthM", () => {
+  it("逐段求和", () => {
+    const d = pathLengthM([[104.1954, 35.8617], [104.1954, 35.8717], [104.1954, 35.8817]]);
+    const one = roughDistanceM([104.1954, 35.8617], [104.1954, 35.8717]);
+    expect(d).toBeCloseTo(one * 2, 6);
+  });
+
+  it("空/单点返回 0", () => {
+    expect(pathLengthM([])).toBe(0);
+    expect(pathLengthM([[1, 2]])).toBe(0);
+  });
+});
+
+describe("pointAtFraction", () => {
+  it("比例按累计路径长度而非顶点数", () => {
+    // 第一段 2 米、第二段 18 米：50% 应落在第二段距起点 2/20 处
+const pts: Position[] = [[0, 0], [0.000010, 0], [0.000180, 0]];
+    const p = pointAtFraction(pts, 0.5);
+    const totalM = pathLengthM(pts);
+    expect(roughDistanceM(pts[0], p)).toBeCloseTo(totalM * 0.5, 0);
+  });
+
+  it("首尾与越界", () => {
+    const pts: Position[] = [[0, 0], [1, 1], [2, 0]];
+    expect(pointAtFraction(pts, 0)).toEqual([0, 0]);
+    expect(pointAtFraction(pts, 1)).toEqual([2, 0]);
+    expect(pointAtFraction(pts, -1)).toEqual([0, 0]);
+    expect(pointAtFraction(pts, 2)).toEqual([2, 0]);
+  });
+
+  it("空/单点安全", () => {
+    expect(pointAtFraction([], 0.5)).toEqual([0, 0]);
+    expect(pointAtFraction([[1, 2]], 0.5)).toEqual([1, 2]);
+  });
+});
