@@ -1,4 +1,4 @@
-import type { PublicTrip, Trip, TripData } from "@roam/core";
+import type { Position, PublicTrip, SegmentPart, Trip, TripData } from "@roam/core";
 
 /**
  * 类型化 API 客户端：Web（相对路径，走 Next 同源）与 Mobile（绝对地址）共用。
@@ -61,14 +61,53 @@ export function createApiClient(options: ApiClientOptions = {}) {
         body: JSON.stringify(input),
       });
     },
+    /** 移动端同步通道：幂等 upsert。冲突时服务端返回 409 携带 serverUpdatedAt。 */
+    async putTrip(
+      id: string,
+      input: { data?: TripData; title?: string; deleted?: boolean; expectedUpdatedAt?: string },
+    ): Promise<{ ok: true; trip: Trip }> {
+      return request(`/api/trips/${id}`, { method: "PUT", body: JSON.stringify(input) });
+    },
     async deleteTrip(id: string): Promise<boolean> {
       return request<boolean>(`/api/trips/${id}`, { method: "DELETE" });
     },
-    async recentTrips(limit?: number): Promise<{ trips: Trip[] }> {
-      return request<{ trips: Trip[] }>(`/api/recent${limit ? `?limit=${limit}` : ""}`);
+    async recentTrips(limit?: number): Promise<{ trips: Trip[]; deletedIds: string[] }> {
+      return request(`/api/recent${limit ? `?limit=${limit}` : ""}`);
+    },
+    /** 增量拉取：updatedAt > since 的行程与 tombstone。 */
+    async recentSince(since: string): Promise<{ trips: Trip[]; deletedIds: string[] }> {
+      return request(`/api/recent?since=${encodeURIComponent(since)}`);
+    },
+    /** 设备注册：匿名 owner + Bearer 令牌（明文仅此一次）。 */
+    async registerDevice(): Promise<{ ownerId: string; token: string }> {
+      const res = await doFetch(`${baseUrl}/api/auth/device-token`, { method: "POST" });
+      if (!res.ok) throw new ApiError(res.status, "device register failed");
+      return (await res.json()) as { ownerId: string; token: string };
+    },
+    /** 发起配对：返回一次性 6 位配对码。 */
+    async createDevicePair(): Promise<{ code: string; expiresAt: string }> {
+      return request("/api/auth/device-pair", { method: "POST" });
     },
     async shareTrip(shareId: string): Promise<PublicTrip> {
       return request<PublicTrip>(`/api/trips/share/${shareId}`);
+    },
+    async searchPlaces(q: string): Promise<Array<{ id: string; name: string; lat: number; lng: number; address?: string }>> {
+      return request(`/api/search?q=${encodeURIComponent(q)}`);
+    },
+    async regeocode(lat: number, lng: number): Promise<{ name?: string; city?: string }> {
+      return request(`/api/regeocode?lat=${lat}&lng=${lng}`);
+    },
+    async planRoute(input: { mode: string; from: Position; to: Position }): Promise<{
+      geometry: Position[];
+      distanceM: number;
+      durationMin: number;
+      fallback?: boolean;
+      parts?: SegmentPart[];
+    }> {
+      return request("/api/route", { method: "POST", body: JSON.stringify(input) });
+    },
+    async weather(city: string): Promise<unknown> {
+      return request(`/api/weather?city=${encodeURIComponent(city)}`);
     },
   };
 }
