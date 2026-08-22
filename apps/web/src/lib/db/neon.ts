@@ -1,8 +1,15 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
+import { nanoid } from "nanoid";
 import * as schema from "@/lib/db/schema";
-import { toTrip, type TripRepo } from "@/lib/db/repo";
+import {
+  toTrip,
+  type DeltaResult,
+  type TripRepo,
+  type UpsertTripInput,
+  type UpsertTripResult,
+} from "@/lib/db/repo";
 import type { NewTripInput, TripData, Trip } from "@roam/core";
 
 export class NeonTripRepo implements TripRepo {
@@ -235,5 +242,139 @@ export class NeonTripRepo implements TripRepo {
           updatedAt: new Date(),
         });
     });
+  }
+
+  // ---- 移动端同步与设备身份 ----
+
+  async upsertTrip(input: UpsertTripInput): Promise<UpsertTripResult> {
+    return this.withRetry(async () => {
+      // 先走条件更新：命中即覆盖建档/更新/软删/复活四种情况（复活 = 已删行被重新写入数据）。
+      const conditions = [eq(schema.trips.id, input.id), eq(schema.trips.ownerId, input.ownerId)];
+      if (input.expectedUpdatedAt !== undefined) {
+        // 与 update 相同的 1ms 窗口比较，规避微秒残差误判
+        const t = new Date(input.expectedUpdatedAt).getTime();
+        conditions.push(
+          sql`${schema.trips.updatedAt} >= ${new Date(t)} AND ${schema.trips.updatedAt} < ${new Date(t + 1)}`,
+        );
+      }
+      const [row] = await this.db
+        .update(schema.trips)
+        .set({
+          updatedAt: new Date(),
+          updaterId: input.ownerId,
+          ...(input.data !== undefined ? { data: input.data } : {}),
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          ...(input.deleted !== undefined ? { isDeleted: input.deleted } : {}),
+        })
+        .where(and(...conditions))
+        .returning();
+      if (row) return { ok: true, trip: toTrip(row) };
+
+      // 未命中：不存在 → 插入；属于他人 → forbidden；版本不匹配 → conflict
+      const [existing] = await this.db.select().from(schema.trips).where(eq(schema.trips.id, input.id)).limit(1);
+      if (!existing) {
+        const emptyData: TripData = { days: [], stops: [], segments: [] };
+        const [inserted] = await this.db
+          .insert(schema.trips)
+          .values({
+            id: input.id,
+            shareId: nanoid(16),
+            ownerId: input.ownerId,
+            creatorId: input.ownerId,
+            updaterId: input.ownerId,
+            title: input.title ?? null,
+            data: input.data ?? emptyData,
+            isDeleted: input.deleted === true,
+          })
+          .onConflictDoNothing()
+          .returning();
+        if (inserted) return { ok: true, trip: toTrip(inserted) };
+        // 并发建档竞争：重查后按冲突处理
+        return this.classifyMiss(input.id, input.ownerId);
+      }
+      if (existing.ownerId !== input.ownerId) return { ok: false, reason: "forbidden" };
+      return { ok: false, reason: "conflict", serverUpdatedAt: existing.updatedAt.toISOString() };
+    });
+  }
+
+  private async classifyMiss(id: string, ownerId: string): Promise<UpsertTripResult> {
+    const [existing] = await this.db.select().from(schema.trips).where(eq(schema.trips.id, id)).limit(1);
+    if (existing && existing.ownerId !== ownerId) return { ok: false, reason: "forbidden" };
+    if (existing) return { ok: false, reason: "conflict", serverUpdatedAt: existing.updatedAt.toISOString() };
+    // 行程在检查间隙被物理清除等极端情况：按冲突上报，客户端拉取后自愈
+    return { ok: false, reason: "conflict", serverUpdatedAt: new Date().toISOString() };
+  }
+
+  async listChangedSince(ownerId: string, since: Date, limit: number): Promise<DeltaResult> {
+    return this.withRetry(async () => {
+      const rows = await this.db
+        .select()
+        .from(schema.trips)
+        .where(and(eq(schema.trips.ownerId, ownerId), gt(schema.trips.updatedAt, since)))
+        .orderBy(asc(schema.trips.updatedAt))
+        .limit(limit);
+      return {
+        trips: rows.filter((r) => !r.isDeleted).map(toTrip),
+        deletedIds: rows.filter((r) => r.isDeleted).map((r) => r.id),
+      };
+    });
+  }
+
+  async createApiToken(tokenHash: string, ownerId: string): Promise<void> {
+    return this.withRetry(async () => {
+      await this.db
+        .insert(schema.apiTokens)
+        .values({ tokenHash, ownerId, creatorId: ownerId, updaterId: ownerId });
+    });
+  }
+
+  async resolveApiToken(tokenHash: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ ownerId: schema.apiTokens.ownerId })
+      .from(schema.apiTokens)
+      .where(and(eq(schema.apiTokens.tokenHash, tokenHash), eq(schema.apiTokens.isDeleted, false)))
+      .limit(1);
+    return row?.ownerId ?? null;
+  }
+
+  async bindApiTokenOwner(tokenHash: string, userId: string): Promise<boolean> {
+    const [row] = await this.db
+      .update(schema.apiTokens)
+      .set({ ownerId: userId, updaterId: userId, updatedAt: new Date() })
+      .where(and(eq(schema.apiTokens.tokenHash, tokenHash), eq(schema.apiTokens.isDeleted, false)))
+      .returning({ tokenHash: schema.apiTokens.tokenHash });
+    return row !== undefined;
+  }
+
+  async createDevicePair(code: string, tokenHash: string, ownerId: string, expiresAt: Date): Promise<void> {
+    return this.withRetry(async () => {
+      // 惰性清理过期配对码，保持表轻量
+      await this.db.delete(schema.devicePairs).where(sql`${schema.devicePairs.expiresAt} < now()`);
+      await this.db.insert(schema.devicePairs).values({
+        code,
+        tokenHash,
+        expiresAt,
+        creatorId: ownerId,
+        updaterId: ownerId,
+      });
+    });
+  }
+
+  async consumeDevicePair(code: string): Promise<string | null> {
+    const now = new Date();
+    // 原子消费：仅未使用且未过期时可置 used，防并发重复消费
+    const [row] = await this.db
+      .update(schema.devicePairs)
+      .set({ used: true, updaterId: "pair-confirm", updatedAt: now })
+      .where(
+        and(
+          eq(schema.devicePairs.code, code),
+          eq(schema.devicePairs.used, false),
+          eq(schema.devicePairs.isDeleted, false),
+          gt(schema.devicePairs.expiresAt, now),
+        ),
+      )
+      .returning({ tokenHash: schema.devicePairs.tokenHash });
+    return row?.tokenHash ?? null;
   }
 }

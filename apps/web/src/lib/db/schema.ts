@@ -52,3 +52,34 @@ export const savedTrips = pgTable(
     index("saved_trips_trip_id_idx").on(t.tripId),
   ],
 );
+
+/**
+ * 移动端设备令牌：Bearer 身份凭证（原文不落库，仅存 sha256）。
+ * ownerId 初始为设备匿名身份；绑定为登录用户时改指用户 id。
+ */
+export const apiTokens = pgTable(
+  "api_tokens",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    creatorId: text("creator_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updaterId: text("updater_id").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    isDeleted: boolean("is_deleted").default(false).notNull(),
+  },
+  (t) => [index("api_tokens_owner_idx").on(t.ownerId)],
+);
+
+/** 设备配对：App 发起配对码 → 用户在已登录的 Web 页输入确认，完成账号绑定。 */
+export const devicePairs = pgTable("device_pairs", {
+  code: text("code").primaryKey(),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  used: boolean("used").default(false).notNull(),
+  creatorId: text("creator_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updaterId: text("updater_id").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  isDeleted: boolean("is_deleted").default(false).notNull(),
+});

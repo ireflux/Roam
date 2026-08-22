@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getOrCreateOwnerId } from "@/lib/auth";
+import { BearerAuthError, getOrCreateOwnerId } from "@/lib/auth";
 import { getSessionUser } from "@/lib/auth/server";
 import { getRepo } from "@/lib/db";
 import { nanoid } from "nanoid";
@@ -20,7 +20,13 @@ export async function POST(req: Request) {
   }
 
   const isSave = body.sourceShareId !== undefined;
-  const ownerId = isSave ? (await getSessionUser())?.id ?? null : await getOrCreateOwnerId();
+  let ownerId: string | null;
+  try {
+    ownerId = isSave ? (await getSessionUser())?.id ?? null : await getOrCreateOwnerId();
+  } catch (e) {
+    if (e instanceof BearerAuthError) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    throw e;
+  }
   if (!ownerId) {
     return NextResponse.json({ error: "login_required" }, { status: 401 });
   }

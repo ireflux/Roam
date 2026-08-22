@@ -1,5 +1,12 @@
 import type { NewTripInput, Trip, TripData } from "@roam/core";
-import { toTrip, type TripRepo } from "@/lib/db/repo";
+import { nanoid } from "nanoid";
+import {
+  toTrip,
+  type DeltaResult,
+  type TripRepo,
+  type UpsertTripInput,
+  type UpsertTripResult,
+} from "@/lib/db/repo";
 
 /** 内存镜像：与 Neon 行为对齐，含审计字段与逻辑删除。 */
 interface StoredTrip extends Trip {
@@ -24,6 +31,8 @@ export class MemoryTripRepo implements TripRepo {
   private saved = new Set<string>();
   private savedIds = new Map<string, string>();
   private savedMeta = new Map<string, StoredSaved>();
+  private tokens = new Map<string, { ownerId: string; isDeleted: boolean }>();
+  private pairs = new Map<string, { tokenHash: string; ownerId: string; expiresAt: number; used: boolean }>();
 
   private savedKey(ownerId: string, sourceShareId: string): string {
     return `${ownerId}|${sourceShareId}`;
@@ -158,5 +167,87 @@ export class MemoryTripRepo implements TripRepo {
     if (!nickname) return;
     this.nicknames.delete(fromOwnerId);
     this.nicknames.set(toOwnerId, nickname);
+  }
+
+  // ---- 移动端同步与设备身份 ----
+
+  async upsertTrip(input: UpsertTripInput): Promise<UpsertTripResult> {
+    const existing = this.trips.get(input.id);
+    if (!existing) {
+      const now = new Date().toISOString();
+      const created: StoredTrip = {
+        id: input.id,
+        shareId: nanoid(16),
+        ownerId: input.ownerId,
+        creatorId: input.ownerId,
+        updaterId: input.ownerId,
+        isDeleted: input.deleted === true,
+        title: input.title ?? null,
+        createdAt: now,
+        updatedAt: now,
+        data: input.data ?? { days: [], stops: [], segments: [] },
+      };
+      this.trips.set(created.id, created);
+      return { ok: true, trip: created };
+    }
+    if (existing.ownerId !== input.ownerId) return { ok: false, reason: "forbidden" };
+    // 与内存 update 一致：ISO 字符串精确比较
+    if (input.expectedUpdatedAt !== undefined && existing.updatedAt !== input.expectedUpdatedAt) {
+      return { ok: false, reason: "conflict", serverUpdatedAt: existing.updatedAt };
+    }
+    const updated: StoredTrip = {
+      ...existing,
+      ...(input.data !== undefined ? { data: input.data } : {}),
+      ...(input.title !== undefined ? { title: input.title } : {}),
+      ...(input.deleted !== undefined ? { isDeleted: input.deleted } : {}),
+      updaterId: input.ownerId,
+      updatedAt: new Date().toISOString(),
+    };
+    this.trips.set(updated.id, updated);
+    return { ok: true, trip: updated };
+  }
+
+  async listChangedSince(ownerId: string, since: Date, limit: number): Promise<DeltaResult> {
+    const rows = [...this.trips.values()]
+      .filter((t) => t.ownerId === ownerId && new Date(t.updatedAt).getTime() > since.getTime())
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+      .slice(0, limit);
+    return {
+      trips: rows
+        .filter((r) => !r.isDeleted)
+        .map((t) => toTrip({ ...t, title: t.title ?? null, createdAt: new Date(t.createdAt), updatedAt: new Date(t.updatedAt) })),
+      deletedIds: rows.filter((r) => r.isDeleted).map((r) => r.id),
+    };
+  }
+
+  async createApiToken(tokenHash: string, ownerId: string): Promise<void> {
+    this.tokens.set(tokenHash, { ownerId, isDeleted: false });
+  }
+
+  async resolveApiToken(tokenHash: string): Promise<string | null> {
+    const token = this.tokens.get(tokenHash);
+    return token && !token.isDeleted ? token.ownerId : null;
+  }
+
+  async bindApiTokenOwner(tokenHash: string, userId: string): Promise<boolean> {
+    const token = this.tokens.get(tokenHash);
+    if (!token || token.isDeleted) return false;
+    this.tokens.set(tokenHash, { ...token, ownerId: userId });
+    return true;
+  }
+
+  async createDevicePair(code: string, tokenHash: string, ownerId: string, expiresAt: Date): Promise<void> {
+    const now = Date.now();
+    for (const [codeKey, pair] of this.pairs) {
+      if (pair.expiresAt <= now) this.pairs.delete(codeKey);
+    }
+    this.pairs.set(code, { tokenHash, ownerId, expiresAt: expiresAt.getTime(), used: false });
+  }
+
+  async consumeDevicePair(code: string): Promise<string | null> {
+    const pair = this.pairs.get(code);
+    if (!pair || pair.used || pair.expiresAt <= Date.now()) return null;
+    pair.used = true;
+    return pair.tokenHash;
   }
 }

@@ -8,6 +8,13 @@
       "when": 1787066588801,
       "tag": "0000_initial_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787420043410,
+      "tag": "0001_daffy_thor",
+      "breakpoints": true
     }
   ]
 }
