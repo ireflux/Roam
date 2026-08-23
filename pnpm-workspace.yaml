@@ -15,3 +15,4 @@ allowBuilds:
 overrides:
   react-native-reanimated: 4.5.1
   react-native-worklets: 0.10.1
+  react-native-gesture-handler: ~2.32.0
