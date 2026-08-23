@@ -2,11 +2,10 @@ packages:
   - "apps/*"
   - "packages/*"
 
-onlyBuiltDependencies:
-  - core-js
-  - esbuild
-  - sharp
-  - unrs-resolver
+# pnpm 11 构建脚本审批策略（allowBuilds 取代了 v10 的 onlyBuiltDependencies）
+# 仅审批四个知名工具链包：esbuild 二进制校验、core-js 捐赠提示、sharp/unrs-resolver 原生绑定
 allowBuilds:
-  core-js: set this to true or false
-  esbuild: set this to true or false
+  core-js: true
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
