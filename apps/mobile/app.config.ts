@@ -36,7 +36,9 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     "./plugins/with-amap.js",
-    "./plugins/with-android-splits.js",
+    // 官方架构过滤：仅构建 arm64（现代国产手机全覆盖），单 APK 体积约为通用包 40%
+    // 需要老设备/模拟器支持时在此追加 "armeabi-v7a" / "x86_64"
+    ["expo-build-properties", { android: { buildArchs: ["arm64-v8a"] } }],
   ],
 };
 
