@@ -18,6 +18,14 @@
         "EXPO_PUBLIC_API_BASE_URL": "https://roam-web.vercel.app"
       }
     },
+    "ios-simulator": {
+      "description": "iOS 模拟器包：无需 Apple 开发者账号即可构建，供 Simulator 安装验证",
+      "distribution": "internal",
+      "ios": { "simulator": true },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://roam-web.vercel.app"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "android": { "buildType": "app-bundle" },

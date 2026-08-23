@@ -1,0 +1,42 @@
+name: Mobile Build
+
+# 手动触发或打 tag 触发移动端构建。
+# 前置条件：仓库 Settings → Secrets and variables → Actions 添加 EXPO_TOKEN
+# （在 https://expo.dev/accounts/<用户名>/settings/access-tokens 创建）。
+# 构建产物在 https://expo.dev 项目页下载；APK 直接安装，AAB 用于上架。
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 目标平台
+        type: choice
+        options: [android, ios, all]
+        default: android
+      profile:
+        description: EAS 构建档位（development=调试包 preview=内测 apk production=商店包）
+        type: choice
+        options: [development, preview, production]
+        default: preview
+
+jobs:
+  eas-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Submit EAS Build
+        working-directory: apps/mobile
+        # --no-wait：上传源码后即返回，云端构建完成后在 Expo 控制台取产物
+        run: eas build --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive --no-wait
