@@ -64,7 +64,14 @@ export function createApiClient(options: ApiClientOptions = {}) {
     /** 移动端同步通道：幂等 upsert。冲突时服务端返回 409 携带 serverUpdatedAt。 */
     async putTrip(
       id: string,
-      input: { data?: TripData; title?: string; deleted?: boolean; expectedUpdatedAt?: string },
+      input: {
+        data?: TripData;
+        title?: string;
+        deleted?: boolean;
+        expectedUpdatedAt?: string;
+        /** 冲突解决「以本地为准」：跳过乐观并发校验。 */
+        force?: boolean;
+      },
     ): Promise<{ ok: true; trip: Trip }> {
       return request(`/api/trips/${id}`, { method: "PUT", body: JSON.stringify(input) });
     },
