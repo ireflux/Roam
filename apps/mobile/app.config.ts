@@ -36,6 +36,7 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     "./plugins/with-amap.js",
+    "./plugins/with-android-splits.js",
   ],
 };
 
