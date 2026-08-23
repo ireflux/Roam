@@ -14,6 +14,8 @@ import type { Position } from "@roam/core";
 import { BRAND } from "@/lib/theme";
 import { tripDb } from "@/services/db";
 import { api } from "@/lib/env";
+import { resolveKeepLocal, resolveTakeRemote } from "@/services/sync";
+import { useSyncStore } from "@/store/useSyncStore";
 import { useTripStore } from "@/store/useTripStore";
 import { TripMap } from "@/map/TripMap";
 
@@ -34,6 +36,7 @@ export default function EditorScreen() {
   const store = useTripStore();
   const trip = store.trip;
   const [panelStop, setPanelStop] = React.useState<string | null>(null);
+  const hasConflict = useSyncStore((s) => (tripId ? s.conflictIds.includes(tripId) : false));
 
   // 载入行程；找不到则返回首页
   React.useEffect(() => {
@@ -98,8 +101,33 @@ export default function EditorScreen() {
 
   const statusLabel = STATUS_LABEL[store.status] ?? "";
 
+  const onConflictKeepLocal = () => {
+    void resolveKeepLocal(trip.id).then(() => {
+      void tripDb.get(trip.id).then((t) => t && store.load(t));
+    });
+  };
+  const onConflictTakeRemote = () => {
+    void resolveTakeRemote(trip.id).then((fresh) => {
+      if (fresh) store.load(fresh);
+      else store.flushNow();
+    });
+  };
+
   return (
     <View style={styles.container}>
+      {hasConflict ? (
+        <View style={styles.conflictBar}>
+          <Text style={styles.conflictText}>云端有其他设备修改了此行程</Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Pressable style={styles.conflictBtn} onPress={onConflictKeepLocal}>
+              <Text style={[styles.conflictBtnText, { color: BRAND.primary }]}>用我的版本</Text>
+            </Pressable>
+            <Pressable style={styles.conflictBtn} onPress={onConflictTakeRemote}>
+              <Text style={[styles.conflictBtnText, { color: "#b91c1c" }]}>用云端版本</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
       <View style={styles.titleRow}>
         <TextInput
           style={styles.titleInput}
@@ -306,6 +334,29 @@ function ToolButton(props: { label: string; active?: boolean; disabled?: boolean
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f7f8fa" },
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
+  conflictBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#fef3c7",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#fcd34d",
+  },
+  conflictText: { fontSize: 12, color: "#92400e", flexShrink: 1 },
+  conflictBtn: {
+    paddingHorizontal: 10,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#fcd34d",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  conflictBtnText: { fontSize: 12, fontWeight: "700" },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",

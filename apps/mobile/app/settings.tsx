@@ -3,7 +3,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 import { BRAND } from "@/lib/theme";
 import { API_BASE_URL } from "@/lib/env";
 import { resetIdentity } from "@/services/session";
-import { pushDirty } from "@/services/sync";
+import { syncNow } from "@/services/sync";
 
 /** 设置页：同步状态 / 设备身份管理。登录绑定在 M5 接入（配对码流程）。 */
 export default function SettingsScreen() {
@@ -14,8 +14,10 @@ export default function SettingsScreen() {
     if (syncing) return;
     setSyncing(true);
     try {
-      const { pushed, conflicts } = await pushDirty();
-      setLastResult(`已推送 ${pushed} 个行程${conflicts > 0 ? `，${conflicts} 个冲突待处理` : ""}`);
+      const { pushed, conflicts, pulled } = await syncNow();
+      setLastResult(
+        `推送 ${pushed} · 拉取 ${pulled}${conflicts > 0 ? ` · ${conflicts} 个冲突待处理` : ""}`,
+      );
     } finally {
       setSyncing(false);
     }

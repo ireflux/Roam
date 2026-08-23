@@ -157,6 +157,49 @@ export const tripDb = {
     await db.runAsync(`UPDATE trips SET dirty = 1, updated_at = ? WHERE id = ?`, [Date.now(), id]);
   },
 
+  /** 远端版本覆盖本地（pull / 冲突「用云端」）：清脏并推进并发基准。 */
+  async applyRemote(trip: Trip): Promise<void> {
+    const db = await open();
+    await db.runAsync(
+      `INSERT INTO trips (id, share_id, title, data, base_updated_at, dirty, deleted, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         share_id = excluded.share_id,
+         title = excluded.title,
+         data = excluded.data,
+         base_updated_at = excluded.base_updated_at,
+         dirty = 0,
+         deleted = 0,
+         updated_at = ?`,
+      [
+        trip.id,
+        trip.shareId || null,
+        trip.title ?? null,
+        JSON.stringify(trip.data),
+        trip.updatedAt,
+        Date.parse(trip.createdAt) || Date.now(),
+        Date.now(),
+        Date.now(),
+      ],
+    );
+  },
+
+  /** 物理清除本地行（应用远端 tombstone）。 */
+  async purgeRow(id: string): Promise<void> {
+    const db = await open();
+    await db.runAsync(`DELETE FROM trips WHERE id = ?`, [id]);
+  },
+
+  /** 冲突「以云端为准」：拉取远端并覆盖本地（含活跃 store 的重载由调用方处理）。 */
+  async getBaseUpdatedAt(id: string): Promise<string | null> {
+    const db = await open();
+    const row = await db.getFirstAsync<{ base_updated_at: string }>(
+      `SELECT base_updated_at FROM trips WHERE id = ?`,
+      [id],
+    );
+    return row?.base_updated_at ?? null;
+  },
+
   async getMeta(key: string): Promise<string | null> {
     const db = await open();
     const row = await db.getFirstAsync<{ value: string }>(`SELECT value FROM sync_meta WHERE key = ?`, [key]);

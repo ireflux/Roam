@@ -3,6 +3,7 @@ import { Pressable, Text } from "react-native";
 import { Link, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ensureIdentity } from "@/services/session";
+import { initSyncTriggers } from "@/services/syncTriggers";
 import { initAmapSdk } from "@/map/amapInit";
 
 function SettingsLink() {
@@ -19,7 +20,14 @@ export default function RootLayout() {
   React.useEffect(() => {
     // 设备身份与高德 SDK 初始化失败不阻塞 UI：编辑器保存时会再次触发重试
     initAmapSdk();
-    ensureIdentity().catch(() => {});
+    let cleanup: (() => void) | undefined;
+    // 身份就绪后再启动同步触发器（回前台/网络恢复），避免无凭证请求空转
+    void ensureIdentity()
+      .then(() => {
+        cleanup = initSyncTriggers();
+      })
+      .catch(() => {});
+    return () => cleanup?.();
   }, []);
 
   return (

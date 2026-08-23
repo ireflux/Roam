@@ -95,6 +95,7 @@ export async function PUT(req: Request, { params }: Ctx) {
     title?: string;
     deleted?: unknown;
     expectedUpdatedAt?: string;
+    force?: unknown;
   };
   if (body.data === undefined && body.title === undefined && body.deleted === undefined) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
@@ -111,6 +112,13 @@ export async function PUT(req: Request, { params }: Ctx) {
   if (body.expectedUpdatedAt !== undefined && Number.isNaN(Date.parse(body.expectedUpdatedAt))) {
     return NextResponse.json({ error: "invalid_expected_updated_at" }, { status: 400 });
   }
+  if (body.force !== undefined && typeof body.force !== "boolean") {
+    return NextResponse.json({ error: "invalid_force" }, { status: 400 });
+  }
+  // 移动端同步约定：无基准的更新必须显式 force，防止静默丢并发保护
+  if (body.data !== undefined && body.expectedUpdatedAt === undefined && body.force !== true) {
+    return NextResponse.json({ error: "expected_updated_at_required" }, { status: 400 });
+  }
 
   const result = await getRepo().upsertTrip({
     id,
@@ -119,6 +127,7 @@ export async function PUT(req: Request, { params }: Ctx) {
     title: typeof body.title === "string" ? body.title.trim().slice(0, 100) : undefined,
     deleted: body.deleted as boolean | undefined,
     expectedUpdatedAt: body.expectedUpdatedAt,
+    force: body.force as boolean | undefined,
   });
   if (result.ok) return NextResponse.json({ ok: true, trip: result.trip });
   if (result.reason === "forbidden") return NextResponse.json({ error: "not_found_or_forbidden" }, { status: 403 });

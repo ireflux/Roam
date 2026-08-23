@@ -250,7 +250,7 @@ export class NeonTripRepo implements TripRepo {
     return this.withRetry(async () => {
       // 先走条件更新：命中即覆盖建档/更新/软删/复活四种情况（复活 = 已删行被重新写入数据）。
       const conditions = [eq(schema.trips.id, input.id), eq(schema.trips.ownerId, input.ownerId)];
-      if (input.expectedUpdatedAt !== undefined) {
+      if (input.expectedUpdatedAt !== undefined && input.force !== true) {
         // 与 update 相同的 1ms 窗口比较，规避微秒残差误判
         const t = new Date(input.expectedUpdatedAt).getTime();
         conditions.push(

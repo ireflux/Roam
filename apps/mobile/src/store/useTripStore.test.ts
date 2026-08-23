@@ -5,10 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * 验证与 Web 版一致的编辑语义（ops 复用正确性、undo/redo、路由降级）。
  */
 
-const { upsertLocal, markSynced, pushDirty, planRoute } = vi.hoisted(() => ({
+const { upsertLocal, markSynced, syncNow, planRoute } = vi.hoisted(() => ({
   upsertLocal: vi.fn(),
   markSynced: vi.fn(),
-  pushDirty: vi.fn(),
+  syncNow: vi.fn(),
   planRoute: vi.fn(),
 }));
 
@@ -25,7 +25,7 @@ vi.mock("@/services/db", () => ({
   },
 }));
 
-vi.mock("@/services/sync", () => ({ pushDirty }));
+vi.mock("@/services/sync", () => ({ syncNow, resolveKeepLocal: vi.fn(), resolveTakeRemote: vi.fn() }));
 
 vi.mock("@/lib/env", () => ({
   API_BASE_URL: "",
@@ -44,7 +44,7 @@ function makeTripData() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  pushDirty.mockResolvedValue({ pushed: 0, conflicts: 0 });
+  syncNow.mockResolvedValue({ pushed: 0, conflicts: 0, pulled: 0 });
   // 重置模块级单例状态
   useTripStore.setState({
     trip: null,
@@ -126,10 +126,18 @@ describe("useTripStore（mobile）", () => {
     expect(data.segments).toHaveLength(0);
   });
 
-  it("flushNow 调用推送", async () => {
+  it("flushNow 触发同步并回写保存状态", async () => {
     await useTripStore.getState().createLocal();
     await useTripStore.getState().flushNow();
-    expect(pushDirty).toHaveBeenCalled();
+    expect(syncNow).toHaveBeenCalled();
+    expect(useTripStore.getState().status).toBe("saved");
+  });
+
+  it("同步冲突时进入 conflict 状态", async () => {
+    syncNow.mockResolvedValue({ pushed: 0, conflicts: 1, pulled: 0 });
+    await useTripStore.getState().createLocal();
+    await useTripStore.getState().flushNow();
+    expect(useTripStore.getState().status).toBe("conflict");
   });
 
   it("makeTripData 结构通过 isTripData 校验（core 共享类型契约）", async () => {

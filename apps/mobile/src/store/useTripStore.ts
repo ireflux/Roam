@@ -25,7 +25,7 @@ import {
 } from "@roam/core";
 import { api } from "@/lib/env";
 import { tripDb } from "@/services/db";
-import { pushDirty } from "@/services/sync";
+import { syncNow } from "@/services/sync";
 
 export type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error" | "offline" | "conflict";
 export type Tool = "select" | "add" | "draw" | "snap";
@@ -117,16 +117,13 @@ async function flushSave(get: () => TripState): Promise<void> {
   if (!trip) return;
   useTripStore.setState({ status: "saving" });
   await persistLocal(trip);
-  const { conflicts } = await pushDirty();
+  const { conflicts } = await syncNow();
   const latest = get();
   if (!latest.trip || latest.trip.id !== trip.id) return;
-  if (conflicts > 0 && latest.trip.id === trip.id) {
-    useTripStore.setState({ status: "conflict" });
-  } else if (latest.status === "saving") {
-    useTripStore.setState({
-      status: latest.trip.data !== trip.data ? "dirty" : "saved",
-    });
-  }
+  if (latest.status !== "saving") return; // 期间已有新变更，状态由后续保存接管
+  useTripStore.setState({
+    status: conflicts > 0 ? "conflict" : latest.trip.data !== trip.data ? "dirty" : "saved",
+  });
 }
 
 /** 结构性共享：ops 全程不可变，历史版本持有引用即可，undo/redo O(1)。 */

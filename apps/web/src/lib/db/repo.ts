@@ -9,6 +9,8 @@ export interface UpsertTripInput {
   deleted?: boolean;
   /** 更新已有行程时的乐观并发基准；新建路径忽略。 */
   expectedUpdatedAt?: string;
+  /** 冲突解决「以本地为准」：跳过乐观并发校验强制覆盖。 */
+  force?: boolean;
 }
 
 export type UpsertTripResult =

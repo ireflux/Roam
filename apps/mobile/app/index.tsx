@@ -4,6 +4,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import type { Trip } from "@roam/core";
 import { BRAND } from "@/lib/theme";
 import { tripDb } from "@/services/db";
+import { useSyncStore } from "@/store/useSyncStore";
 import { useTripStore } from "@/store/useTripStore";
 
 /** 首页：新建行程 + 本地行程列表（本地优先，离线可用）。 */
@@ -13,6 +14,7 @@ export default function HomeScreen() {
   const [draft, setDraft] = React.useState("");
   const [creating, setCreating] = React.useState(false);
   const createLocal = useTripStore((s) => s.createLocal);
+  const syncState = useSyncStore((s) => s.state);
 
   const refresh = React.useCallback(() => {
     void tripDb.list().then(setTrips);
@@ -53,6 +55,11 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      {syncState === "offline" ? (
+        <View style={styles.offlineBar}>
+          <Text style={styles.offlineText}>离线模式：更改已保存在本机，联网后自动同步</Text>
+        </View>
+      ) : null}
       <View style={styles.createRow}>
         <TextInput
           style={styles.input}
@@ -101,6 +108,12 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f7f8fa" },
+  offlineBar: {
+    backgroundColor: "#fef3c7",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  offlineText: { fontSize: 12, color: "#92400e", textAlign: "center" },
   createRow: {
     flexDirection: "row",
     gap: 8,

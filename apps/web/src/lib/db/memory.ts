@@ -192,7 +192,7 @@ export class MemoryTripRepo implements TripRepo {
     }
     if (existing.ownerId !== input.ownerId) return { ok: false, reason: "forbidden" };
     // 与内存 update 一致：ISO 字符串精确比较
-    if (input.expectedUpdatedAt !== undefined && existing.updatedAt !== input.expectedUpdatedAt) {
+    if (input.expectedUpdatedAt !== undefined && input.force !== true && existing.updatedAt !== input.expectedUpdatedAt) {
       return { ok: false, reason: "conflict", serverUpdatedAt: existing.updatedAt };
     }
     const updated: StoredTrip = {

@@ -10,6 +10,9 @@ importers:
 
   apps/mobile:
     dependencies:
+      '@react-native-community/netinfo':
+        specifier: 12.0.1
+        version: 12.0.1(react-native@0.87.0(@babel/core@7.29.7)(@react-native/metro-config@0.87.0(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       '@roam/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
@@ -31,9 +34,6 @@ importers:
       expo-linking:
         specifier: ~57.0.7
         version: 57.0.7(expo@57.0.15)(react-native@0.87.0(@babel/core@7.29.7)(@react-native/metro-config@0.87.0(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
-      expo-network:
-        specifier: ~57.0.1
-        version: 57.0.1(expo@57.0.15)(react@19.2.8)
       expo-router:
         specifier: ~57.0.15
         version: 57.0.15(6a609637f351d974c8803b18a343c843)
@@ -2627,6 +2627,12 @@ packages:
     peerDependencies:
       react: ^18.0 || ^19.0 || ^19.0.0-rc
 
+  '@react-native-community/netinfo@12.0.1':
+    resolution: {integrity: sha512-P/3caXIvfYSJG8AWJVefukg+ZGRPs+M4Lp3pNJtgcTYoJxCjWrKQGNnCkj/Cz//zWa/avGed0i/wzm0T8vV2IQ==}
+    peerDependencies:
+      react: '*'
+      react-native: '>=0.59'
+
   '@react-native-masked-view/masked-view@0.3.2':
     resolution: {integrity: sha512-XwuQoW7/GEgWRMovOQtX3A4PrXhyaZm0lVUiY8qJDvdngjLms9Cpdck6SmGAUNqQwcj2EadHC1HwL0bEyoa/SQ==}
     peerDependencies:
@@ -4285,12 +4291,6 @@ packages:
     resolution: {integrity: sha512-NQF7MUF0j3rQHV8KJqETYA1SrJr3USvQ/AWEhODo+unMRFBDP9BKpn8+aNGGmx6fa2XLnqC2qulVw4DT6Gp13Q==}
     peerDependencies:
       react-native: '*'
-
-  expo-network@57.0.1:
-    resolution: {integrity: sha512-ndg+FbDDlz6XTpQ6aVuVgyvrYQwMkpcUAvZIXbwrGBbLTSWNzYC/gawYu1BAeDN7O6JTGY98GBVJBov/JH7LgQ==}
-    peerDependencies:
-      expo: '*'
-      react: '*'
 
   expo-router@57.0.15:
     resolution: {integrity: sha512-vwr2HL2U7hqv3QTkuz0e8hQc5hkgpXztisy30VwhdXJVDPdP0/m8wSiYUm6GKyZAbcXfD4fn44ZYcJsSESY6cA==}
@@ -9660,6 +9660,11 @@ snapshots:
     dependencies:
       react: 19.2.4
 
+  '@react-native-community/netinfo@12.0.1(react-native@0.87.0(@babel/core@7.29.7)(@react-native/metro-config@0.87.0(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)':
+    dependencies:
+      react: 19.2.8
+      react-native: 0.87.0(@babel/core@7.29.7)(@react-native/metro-config@0.87.0(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.8)
+
   '@react-native-masked-view/masked-view@0.3.2(react-native@0.87.0(@babel/core@7.29.7)(@react-native/metro-config@0.87.0(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.4))(react@19.2.4)':
     dependencies:
       react: 19.2.4
@@ -11650,11 +11655,6 @@ snapshots:
   expo-modules-jsi@57.0.5(react-native@0.87.0(@babel/core@7.29.7)(@react-native/metro-config@0.87.0(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.8)):
     dependencies:
       react-native: 0.87.0(@babel/core@7.29.7)(@react-native/metro-config@0.87.0(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.8)
-
-  expo-network@57.0.1(expo@57.0.15)(react@19.2.8):
-    dependencies:
-      expo: 57.0.15(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(@expo/metro-runtime@57.0.12)(expo-router@57.0.15)(react-dom@19.2.4(react@19.2.8))(react-native-worklets@0.12.1(@babel/core@7.29.7)(@react-native/metro-config@0.87.0(@babel/core@7.29.7))(react-native@0.87.0(@babel/core@7.29.7)(@react-native/metro-config@0.87.0(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))(react-native@0.87.0(@babel/core@7.29.7)(@react-native/metro-config@0.87.0(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)(typescript@5.9.3)
-      react: 19.2.8
 
   expo-router@57.0.15(19f13f9cd0300a17063bdc763f081c14):
     dependencies:
