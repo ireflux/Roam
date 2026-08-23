@@ -36,13 +36,6 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     "./plugins/with-amap.js",
-    [
-      "expo-build-properties",
-      {
-        android: { newArchEnabled: false },
-        ios: { newArchEnabled: false },
-      },
-    ],
   ],
 };
 
