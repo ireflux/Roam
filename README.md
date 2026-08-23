@@ -128,7 +128,8 @@ pnpm db:generate    # generate a migration from schema changes
 pnpm --filter @roam/mobile start          # expo dev server (use a dev build, not Expo Go)
 pnpm --filter @roam/mobile ios            # run on iOS simulator/device
 pnpm --filter @roam/mobile android        # run on Android emulator/device
-# Release builds via EAS: eas build --profile preview / production (see apps/mobile/eas.json)
+# Release APK/AAB: GitHub Actions "Mobile Build" workflow (pure Actions, no external account),
+# or locally: expo prebuild -p android && cd android && ./gradlew assembleRelease
 ```
 
 ## Mobile App (apps/mobile)
