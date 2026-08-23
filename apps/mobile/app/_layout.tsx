@@ -39,7 +39,7 @@ export default function RootLayout() {
           headerTintColor: "#0b644b",
         }}
       >
-        <Stack.Screen name="index" options={{ title: "Roam 路线规划", headerRight: SettingsLink }} />
+        <Stack.Screen name="index" options={{ title: "Roam", headerRight: SettingsLink }} />
         <Stack.Screen name="editor/[tripId]" options={{ title: "行程编辑", headerBackTitle: "返回" }} />
         <Stack.Screen name="t/[shareId]" options={{ title: "分享行程" }} />
         <Stack.Screen name="settings" options={{ title: "设置" }} />

@@ -4,7 +4,7 @@ const amapAndroidKey = process.env.AMAP_ANDROID_KEY ?? "";
 const amapIOSKey = process.env.AMAP_IOS_KEY ?? "";
 
 const config: ExpoConfig = {
-  name: "Roam 路线规划",
+  name: "Roam",
   slug: "roam",
   scheme: "roam",
   version: "0.1.0",
