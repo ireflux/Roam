@@ -11,7 +11,7 @@ const config: ExpoConfig = {
   orientation: "portrait",
   userInterfaceStyle: "automatic",
   ios: {
-    bundleIdentifier: "tech.roam.planner",
+    bundleIdentifier: "io.github.ireflux.roam",
     supportsTablet: true,
     infoPlist: {
       NSLocationWhenInUseUsageDescription: "用于定位当前位置作为路线起点，以及地图交互。",
@@ -25,7 +25,7 @@ const config: ExpoConfig = {
     },
   },
   android: {
-    package: "tech.roam.planner",
+    package: "io.github.ireflux.roam",
     permissions: ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
     blockedPermissions: [],
   },

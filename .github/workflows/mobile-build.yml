@@ -5,7 +5,7 @@ name: Mobile Build
 #   未配置正式 keystore 时自动回退 debug 签名（侧载安装可用，上架前需换正式证书）。
 # - 可选仓库变量：Settings → Secrets and variables → Actions → Variables 标签页添加
 #     API_BASE_URL       App 内置的服务端地址（缺省回退 https://roam-web.vercel.app）
-#     AMAP_ANDROID_KEY   高德 Android key（绑定 tech.roam.planner 包名 + 证书 SHA1）
+#     AMAP_ANDROID_KEY   高德 Android key（绑定 io.github.ireflux.roam 包名 + 证书 SHA1）
 
 on:
   workflow_dispatch:
